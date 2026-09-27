@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CineTag - AI Video Organizer</title>
+  <link rel="icon" type="image/svg+xml" href="/static/img/app-icon.svg">
+  <link rel="alternate icon" type="image/png" href="/static/img/app-icon.png">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="logo-area" id="header-brand-home" style="cursor: pointer;" title="Return to Batch Processor">
+        <span class="logo-icon"><img src="/static/img/app-icon.svg" width="34" height="34" alt="App Icon" style="border-radius:8px; display:block;"></span>
+        <div class="logo-text">
+          <h1>CineTag</h1>
+          <span class="subtitle">Local-First Video Understanding & Safe Organizer</span>
+        </div>
+      </div>
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="tab-processor">Batch Processor</button>
+        <button class="nav-tab" data-tab="tab-organizer">Renaming & Tagging</button>
+        <button class="nav-tab" data-tab="tab-faces">👥 People & Faces</button>
+        <button class="nav-tab" data-tab="tab-connectors">⚙️ Settings</button>
+        <button class="nav-tab" data-tab="tab-privacy">Privacy & Storage</button>
+      </nav>
+      <div class="header-status">
+        <span id="ffmpeg-status-indicator" class="status-badge checking">FFmpeg: Checking...</span>
+        <span id="ai-status-indicator" class="status-badge checking">AI: Checking...</span>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+
+      <!-- FFmpeg Missing Alert Banner -->
+      <div id="ffmpeg-warning-banner" class="alert-banner hidden">
+        <div class="alert-banner-content flex-between">
+          <div>
+            <span class="banner-title">⚠️ FFmpeg / FFprobe not found</span>
+            <span class="banner-sub">Video frame extraction and audio transcription require FFmpeg on your system.</span>
+          </div>
+          <div class="banner-actions">
+            <button id="btn-banner-locate-ffmpeg" class="btn btn-sm btn-primary">⚙️ Configure in Settings</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 1: BATCH PROCESSOR -->
+      <section id="tab-processor" class="tab-pane active">
+
+        
+        <!-- Intake Mode Selector -->
+        <div class="intake-mode-bar">
+          <button id="mode-btn-local" class="mode-toggle-btn active" data-mode="local">
+            📁 Mode A: Local Directory (In-Place on Host Machine)
+          </button>
+          <button id="mode-btn-upload" class="mode-toggle-btn" data-mode="upload">
+            ☁️ Mode B: Drag & Drop Upload (From Another Computer / LAN)
+          </button>
+        </div>
+
+        <!-- Mode A: Folder Scanner Card -->
+        <div id="section-mode-local" class="intake-section">
+          <div class="card scan-card">
+            <div class="card-header flex-between">
+              <div>
+                <h2>📁 Select Footage Folder on Host</h2>
+                <p class="card-desc">Processes video clips directly in-place with zero copying. Ideal when running on the machine containing the footage.</p>
+              </div>
+              <div class="header-btns" style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <button id="btn-browse-folder" class="btn btn-secondary">📁 Browse Folder...</button>
+                <button id="btn-browse-files" class="btn btn-secondary">🎬 Select Files...</button>
+              </div>
+            </div>
+            <div class="scan-inputs">
+              <div class="input-group flex-grow">
+                <input type="text" id="scan-folder-path" placeholder="/home/username/Videos or C:\Videos\Vacation" spellcheck="false">
+                <button id="btn-scan" class="btn btn-primary">Scan Directory</button>
+              </div>
+              <div class="scan-options">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="scan-recursive" checked>
+                  <span>Include Subfolders</span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="scan-hide-processed">
+                  <span>Hide Already Processed</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Mode A In-Place Local Drag & Drop Target -->
+            <div id="mode-a-dropzone" class="dropzone mode-a-dropzone" style="margin-top: 1rem; border: 2px dashed rgba(59,130,246,0.4); background: rgba(30,58,138,0.12); padding: 1.25rem 1rem; border-radius: 8px; text-align: center; cursor: pointer; transition: all 0.2s;">
+              <div class="dropzone-content">
+                <span class="dropzone-icon" style="font-size: 1.8rem;">📂</span>
+                <p class="dropzone-text" style="margin: 0.25rem 0 0.2rem; font-size: 0.95rem; font-weight: 500;">
+                  Drag & drop local videos or folders from this computer here (or click to browse)
+                </p>
+                <span class="dropzone-sub" style="font-size: 0.8rem; color: #94a3b8;">
+                  ⚡ Processed <b>in place</b> directly on your drive with zero copying or server uploads.
+                </span>
+                <div id="mode-a-drop-status" class="hidden mt-2" style="font-size: 0.85rem; font-weight: 500; color: #34d399;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode B: Drag & Drop Dropzone Card -->
+        <div id="section-mode-upload" class="intake-section hidden">
+          <div class="card upload-card">
+            <div class="card-header flex-between">
+              <div>
+                <h2>☁️ Remote Drag & Drop Upload</h2>
+                <p class="card-desc">Drag video files directly from your remote computer. Files are staged, processed by local AI, and sidecars become immediately downloadable.</p>
+              </div>
+              <button id="btn-clear-all-uploads" class="btn btn-sm btn-danger-outline">🗑️ Clear All Uploads</button>
+            </div>
+
+            <!-- Drag Target -->
+            <div id="dropzone" class="dropzone">
+              <input type="file" id="file-picker" multiple accept="video/*,.mp4,.mov,.mkv,.avi,.webm,.m4v,.mts,.srt" style="display:none">
+              <div class="dropzone-content">
+                <span class="dropzone-icon">📥</span>
+                <p class="dropzone-text">Drag & drop home videos or accompanying <code>.srt</code> subtitles here, or <span class="browse-link">browse files</span></p>
+                <span class="dropzone-sub">Supports MP4, MOV, MKV, AVI, WebM, MTS, and same-named .SRT subtitles</span>
+                <button id="btn-mobile-pick" type="button" class="btn-mobile-upload" title="Choose video from camera roll, device storage, or camera">📱 Tap to Upload from Phone / Camera Roll</button>
+              </div>
+              <div id="upload-progress-box" class="upload-progress-box hidden">
+                <div class="flex-between">
+                  <span id="upload-filename">Uploading...</span>
+                  <span id="upload-percent">0%</span>
+                </div>
+                <div class="progress-bar-bg mt-2">
+                  <div id="upload-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Uploaded Files & Downloads Table -->
+            <div class="table-container mt-3">
+              <table class="data-table" id="uploads-table">
+                <thead>
+                  <tr>
+                    <th>Uploaded Filename</th>
+                    <th>Size</th>
+                    <th>Status</th>
+                    <th>Download Sidecars</th>
+                    <th width="80">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="uploads-tbody">
+                  <tr>
+                    <td colspan="5" class="empty-state">No uploaded videos in staging yet. Drag files into the box above to start.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- Queue Status & Progress -->
+        <div class="card queue-card">
+          <div class="queue-header">
+            <div>
+              <h2>⚡ Processing Engine</h2>
+              <span id="queue-subtext" class="subtext">Idle</span>
+            </div>
+            <div class="queue-actions">
+              <label class="checkbox-label" style="font-size:0.8rem; margin-right:0.5rem; background:rgba(30,41,59,0.7); padding:0.35rem 0.65rem; border-radius:6px; border:1px solid var(--border-color); display:flex; align-items:center; gap:0.4rem; cursor:pointer;" title="When enabled, files are automatically renamed using your configured naming scheme upon completion.">
+                <input type="checkbox" id="quick-auto-rename-toggle">
+                <span>✨ Auto-Rename: <b id="quick-auto-rename-label" style="color:#94a3b8;">OFF</b></span>
+              </label>
+              <button id="btn-queue-start" class="btn btn-success">▶ Start Queue</button>
+              <button id="btn-queue-pause" class="btn btn-secondary">⏸ Pause</button>
+              <button id="btn-queue-clear-completed" class="btn btn-secondary" title="Remove completed tasks from the queue list">🧹 Clear Processed</button>
+              <button id="btn-queue-clear" class="btn btn-danger-outline">Clear Queue</button>
+            </div>
+          </div>
+
+          <!-- Batch Date & Time Override / Source Bar -->
+          <div class="batch-date-override-bar" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.6rem 0.85rem; margin-top: 0.6rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem;">
+            <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+              <span style="font-size:0.85rem; font-weight:600; color:#38bdf8;">🕒 Batch Date & Time:</span>
+              <select id="queue-date-source" style="background:#1e293b; color:#f8fafc; border:1px solid #475569; border-radius:4px; padding:0.3rem 0.5rem; font-size:0.8rem;">
+                <option value="smart" selected>🧠 Smart Auto (Filename if present, else Metadata)</option>
+                <option value="filename">📁 Prefer Original Filename Date</option>
+                <option value="metadata">⚙️ File Properties / Metadata (creation_time)</option>
+                <option value="override">✏️ Manual Batch Date Override</option>
+              </select>
+              <div id="queue-date-override-container" class="hidden" style="display:inline-flex; align-items:center; gap:0.4rem;">
+                <input type="date" id="queue-date-override" style="background:#1e293b; color:#f8fafc; border:1px solid #475569; border-radius:4px; padding:0.25rem 0.5rem; font-size:0.8rem;" title="Batch Date Override (YYYY-MM-DD)">
+                <input type="time" id="queue-time-override" step="1" style="background:#1e293b; color:#f8fafc; border:1px solid #475569; border-radius:4px; padding:0.25rem 0.5rem; font-size:0.8rem;" title="Batch Time Override (HH:MM:SS optional)">
+              </div>
+            </div>
+            <button id="btn-goto-batch-rename" class="btn btn-sm btn-secondary" title="Batch rename already-processed clips with a new date schema or override">🏷️ Re-Rename Completed Clips with New Date</button>
+          </div>
+
+          <div class="progress-box">
+            <div class="progress-label">
+              <span id="current-task-name">No active file</span>
+              <span id="current-task-stage">Ready</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+          </div>
+
+          <div class="stats-pills">
+            <div class="pill">Queued: <b id="stat-queued">0</b></div>
+            <div class="pill">Processing: <b id="stat-processing">0</b></div>
+            <div class="pill success">Completed: <b id="stat-completed">0</b></div>
+            <div class="pill danger">Failed: <b id="stat-failed">0</b></div>
+          </div>
+        </div>
+
+        <!-- Latest Processed Video Result Panel -->
+        <div id="section-latest-result" class="card result-highlight-card hidden" style="border-left: 4px solid #10b981; background: rgba(15, 23, 42, 0.75);">
+          <div class="card-header flex-between">
+            <div style="display:flex; align-items:center; gap:0.6rem;">
+              <span style="font-size:1.4rem;">🎉</span>
+              <div>
+                <h2 style="font-size:1.15rem; margin-bottom:2px;" id="latest-result-title">Analysis Complete</h2>
+                <span class="subtext" id="latest-result-filename" style="color:#38bdf8; font-weight:500;">filename.mp4</span>
+              </div>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <button id="btn-open-latest-modal" class="btn btn-primary">👁️ View Full Results & Events</button>
+            </div>
+          </div>
+          <div class="mt-2">
+            <p id="latest-result-summary" style="font-size:0.9rem; line-height:1.5; color:var(--text-main); margin-bottom:0.75rem;">
+              <!-- Summary text populated on completion -->
+            </p>
+            <div class="flex-between" style="flex-wrap:wrap; gap:0.5rem;">
+              <div id="latest-result-tags" class="tags-pills">
+                <!-- Tag pills populated on completion -->
+              </div>
+              <div id="latest-result-downloads" style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+                <!-- Download sidecars pills populated on completion -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scanned Media Table -->
+        <div class="card files-card">
+          <div class="card-header flex-between">
+            <h2>Discovered Clips (<span id="found-count">0</span>)</h2>
+            <div class="table-actions">
+              <button id="btn-select-all" class="btn btn-sm btn-secondary">Select All</button>
+              <button id="btn-deselect-all" class="btn btn-sm btn-secondary">Deselect All</button>
+              <button id="btn-enqueue-selected" class="btn btn-sm btn-primary">Add Selected to Queue</button>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table" id="scanned-table">
+              <thead>
+                <tr>
+                  <th width="40"><input type="checkbox" id="master-select"></th>
+                  <th>Filename</th>
+                  <th>Directory</th>
+                  <th>Size</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="scanned-tbody">
+                <tr>
+                  <td colspan="5" class="empty-state">Enter a directory path above and click "Scan Directory".</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Activity Terminal -->
+        <div class="card log-card">
+          <div class="card-header flex-between">
+            <h3>Activity Log</h3>
+            <div class="header-btns" style="display:flex; gap:0.5rem;">
+              <button id="btn-download-logs-terminal" class="btn btn-sm btn-secondary" title="Download persistent application logs">📥 Download Logs</button>
+              <button id="btn-copy-logs" class="btn btn-sm btn-secondary">📋 Copy Logs</button>
+              <button id="btn-clear-logs" class="btn btn-sm btn-secondary">Clear Screen</button>
+            </div>
+          </div>
+          <div class="terminal" id="terminal-logs">
+            <div class="log-line info">[System] Application loaded. Ready for tasks.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: RENAMING & SAFE TAGGING -->
+      <section id="tab-organizer" class="tab-pane">
+        <div class="card">
+          <div class="card-header flex-between">
+            <div>
+              <h2>🏷️ Suggested Filename Renamer & Date Override</h2>
+              <p class="card-desc">Review and customize AI-suggested descriptive filenames. If files had incorrect metadata dates (e.g. camera clock resets), re-extract dates from original filenames or apply a manual batch date override.</p>
+            </div>
+            <button id="btn-undo-rename" class="btn btn-secondary">↩ Undo Last Rename</button>
+          </div>
+
+          <!-- Renamer Source Selection -->
+          <div class="rename-source-controls" style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.75rem;">
+            <button id="btn-load-completed-renames" class="btn btn-primary" title="Load clips recently completed by the processing engine">⚡ Load Completed Queue Clips</button>
+            <button id="btn-refresh-rename-preview" class="btn btn-secondary">📁 Preview Scanned Folder Clips</button>
+            <button id="btn-reindex-faces-organizer" class="btn btn-secondary" title="Re-index and cluster faces with current distance and sensitivity settings">🔄 Re-Index / Cluster Faces</button>
+          </div>
+
+          <!-- Batch Date & Naming Schema Customizer Toolbar -->
+          <div class="rename-customizer-box" style="background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem; border-bottom:1px solid rgba(255,255,255,0.07); padding-bottom:0.4rem; flex-wrap:wrap; gap:0.5rem;">
+              <span style="font-size:0.9rem; font-weight:600; color:#38bdf8;">🕒 Batch Date & Naming Schema Controls</span>
+              <span style="font-size:0.8rem; color:#94a3b8;">Fixes incorrect metadata dates and formats custom filenames</span>
+            </div>
+
+            <div style="display:flex; gap:0.8rem; flex-wrap:wrap; align-items:flex-end;">
+              <!-- Date Strategy / Override -->
+              <div>
+                <label style="display:block; font-size:0.75rem; color:#94a3b8; margin-bottom:0.25rem;">Date Source / Strategy:</label>
+                <select id="organizer-date-source" style="background:#1e293b; color:#f8fafc; border:1px solid #475569; border-radius:4px; padding:0.35rem 0.6rem; font-size:0.85rem;">
+                  <option value="smart" selected>🧠 Smart (Original Filename if present, else Metadata)</option>
+                  <option value="filename">📁 Re-extract from Original Filename</option>
+                  <option value="metadata">⚙️ File Properties / Metadata (creation_time)</option>
+                  <option value="override">✏️ Manual Batch Date Override</option>
+                </select>
+              </div>
+
+              <!-- Date / Time Override Inputs -->
+              <div id="organizer-date-override-box" class="hidden" style="display:inline-flex; gap:0.4rem;">
+                <div>
+                  <label style="display:block; font-size:0.75rem; color:#94a3b8; margin-bottom:0.25rem;">Batch Date:</label>
+                  <input type="date" id="organizer-date-override" style="background:#1e293b; color:#f8fafc; border:1px solid #475569; border-radius:4px; padding:0.3rem 0.5rem; font-size:0.85rem;">
+                </div>
+                <div>
+                  <label style="display:block; font-size:0.75rem; color:#94a3b8; margin-bottom:0.25rem;">Batch Time (Opt):</label>
+                  <input type="time" id="organizer-time-override" step="1" style="background:#1e293b; color:#f8fafc; border:1px solid #475569; border-radius:4px; padding:0.3rem 0.5rem; font-size:0.85rem;">
+                </div>
+              </div>
+
+              <!-- Naming Scheme Preset -->
+              <div>
+                <label style="display:block; font-size:0.75rem; color:#94a3b8; margin-bottom:0.25rem;">Naming Schema:</label>
+                <select id="organizer-schema-preset" style="background:#1e293b; color:#f8fafc; border:1px solid #475569; border-radius:4px; padding:0.35rem 0.6rem; font-size:0.85rem;">
+                  <option value="{date_compact}_{time_zulu}_{title}">YYYYMMDD_HHMMSS_Title (Compact Zulu)</option>
+                  <option value="{date}_{title}">YYYY-MM-DD_Title (Standard Date)</option>
+                  <option value="{date_compact}_{title}">YYYYMMDD_Title (Compact Date Only)</option>
+                  <option value="{date}_{time_dashed}_{title}">YYYY-MM-DD_HH-MM-SS_Title (Dashed)</option>
+                  <option value="{date_compact}_{time_zulu}_{names}_{title}">YYYYMMDD_HHMMSS_Names_Title</option>
+                  <option value="custom">Custom Template...</option>
+                </select>
+              </div>
+
+              <!-- Template input -->
+              <div id="organizer-template-wrapper" style="flex:1; min-width:200px;">
+                <label style="display:block; font-size:0.75rem; color:#94a3b8; margin-bottom:0.25rem;">Template String:</label>
+                <input type="text" id="organizer-template-input" value="{date_compact}_{time_zulu}_{title}" style="width:100%; background:#1e293b; color:#f8fafc; border:1px solid #475569; border-radius:4px; padding:0.35rem 0.6rem; font-size:0.85rem;">
+              </div>
+
+              <!-- Action buttons -->
+              <div style="display:flex; gap:0.4rem;">
+                <button id="btn-apply-schema-preview" class="btn btn-primary" style="white-space:nowrap;">🔄 Update Preview</button>
+                <button id="btn-execute-selected-renames" class="btn btn-success" style="white-space:nowrap;">✅ Apply Selected Renames</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-container mt-3">
+            <table class="data-table" id="rename-table">
+              <thead>
+                <tr>
+                  <th width="40"><input type="checkbox" id="rename-master-select"></th>
+                  <th>Current Filename</th>
+                  <th>Original Filename</th>
+                  <th>Date & Source Used</th>
+                  <th>Suggested New Name (Editable)</th>
+                  <th width="100">Status</th>
+                </tr>
+              </thead>
+              <tbody id="rename-tbody">
+                <tr>
+                  <td colspan="6" class="empty-state">Load completed queue clips or scan a folder to preview and customize renames.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Safe Container Tagging Card -->
+        <div class="card alert-card">
+          <div class="alert-icon">⚠️</div>
+          <div class="alert-body">
+            <h3>In-Container Metadata Tagging (Safe Mode)</h3>
+            <p>Directly writing tags (Title, Description, Date) into MP4/MOV container streams can be risky with broken encoders. CineTag provides an <b>Automated Integrity Check</b>:</p>
+            <ul>
+              <li>Stream copy without re-encoding (preserves 100% video/audio bitrates).</li>
+              <li>Verification gate: compares duration, stream count, and integrity before replacing original.</li>
+              <li>Automated backup creation (<code>.bak</code>) before in-place modification.</li>
+            </ul>
+            <div class="mt-2">
+              <label class="checkbox-label">
+                <input type="checkbox" id="cfg-enable-tagging">
+                <b>Enable in-file metadata tagging during queue runs</b> (Sidecar files are always generated regardless).
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: PEOPLE & FACES -->
+      <section id="tab-faces" class="tab-pane">
+        <div class="card">
+          <div class="card-header flex-between">
+            <div>
+              <h2>👥 People & Faces Registry</h2>
+              <p class="card-desc">Recognized individuals and auto-generated person clusters detected across your videos. Assign real names to auto-generated labels (e.g. <code>Person_01</code> → <code>Grandma Betty</code>) to retroactively update sidecars and container tags.</p>
+            </div>
+            <div class="header-btns" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+              <input type="file" id="faces-import-file" accept=".zip" style="display:none;">
+              <button id="btn-auto-guess-faces" class="btn btn-secondary" style="border-color: rgba(59,130,246,0.5); color: #60a5fa;" title="Use AI descriptions and summaries from processed videos to best-guess names for unnamed faces">🤖 Auto-Name from AI</button>
+              <button id="btn-reindex-faces" class="btn btn-secondary" title="Re-index and cluster faces with current distance and sensitivity settings">🔄 Re-Index / Cluster Faces</button>
+              <button id="btn-import-faces" class="btn btn-secondary" title="Restore previous face database from .zip">📥 Import Database</button>
+              <button id="btn-export-faces" class="btn btn-secondary" title="Download entire face database as .zip">📤 Export Database</button>
+              <button id="btn-refresh-faces" class="btn btn-secondary">🔄 Refresh</button>
+              <button id="btn-clear-faces" class="btn btn-secondary" style="color: #f87171; border-color: rgba(239, 68, 68, 0.4);" title="Clear all registered people and faces">🗑️ Clear Database</button>
+            </div>
+          </div>
+
+          <div class="faces-search-bar mt-2" style="display: flex; gap: 0.75rem; align-items: center;">
+            <input type="text" id="faces-search-input" class="form-control" placeholder="Search / filter by person name..." style="flex: 1;">
+            <button id="btn-clear-faces-search" class="btn btn-sm btn-secondary hidden" title="Clear search filter">✕ Clear</button>
+            <span class="badge" id="faces-sensitivity-badge" title="Click to jump to Settings" style="cursor: pointer; padding: 0.4rem 0.8rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.85rem; white-space: nowrap;">🎯 Strictness: 0.70 (Strict) ⚙️</span>
+          </div>
+
+          <div class="card p-3 mt-3 mb-2" id="faces-tuning-panel" style="background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border-color); border-radius: 8px;">
+            <div class="flex-between align-center mb-2" style="flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <span style="font-weight: 600; font-size: 0.95rem; color: var(--text-main);">⚙️ Face Detection & Cluster Coherence Tuning</span>
+                <p class="text-muted" style="margin: 0; font-size: 0.8rem;">Adjust thresholds and re-evaluate clusters across all recognized footage in your registry.</p>
+              </div>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button id="btn-save-face-tuning" class="btn btn-sm btn-secondary" title="Save these values as defaults in Settings">💾 Save Values</button>
+                <button id="btn-reindex-faces-quick" class="btn btn-sm btn-primary" title="Re-cluster faces now with current sliders">🔄 Re-Index / Cluster Now</button>
+              </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; align-items: start;">
+              <div>
+                <div class="flex-between align-center mb-1" style="font-size: 0.85rem;">
+                  <label for="faces-quick-confidence" style="font-weight: 600; color: var(--text-main);">
+                    🎯 Minimum Detection Confidence:
+                  </label>
+                  <span id="badge-faces-quick-confidence" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.85rem; padding: 0.15rem 0.5rem;">0.70</span>
+                </div>
+                <input type="range" id="faces-quick-confidence" class="form-range w-100" min="0.30" max="0.95" step="0.05" value="0.70" style="width: 100%;">
+                <div class="flex-between text-muted mt-1" style="font-size: 0.75rem;">
+                  <span>0.30 (Permissive)</span>
+                  <span>0.70 (Recommended Default)</span>
+                  <span>0.95 (Ultra-Strict)</span>
+                </div>
+              </div>
+
+              <div>
+                <div class="flex-between align-center mb-1" style="font-size: 0.85rem;">
+                  <label for="faces-quick-distance" style="font-weight: 600; color: var(--text-main);">
+                    👥 Maximum Recognition Distance (Coherence):
+                  </label>
+                  <span id="badge-faces-quick-distance" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.85rem; padding: 0.15rem 0.5rem;">Distance: 0.45 (Similarity: 0.55)</span>
+                </div>
+                <input type="range" id="faces-quick-distance" class="form-range w-100" min="0.20" max="0.65" step="0.02" value="0.45" style="width: 100%;">
+                <div class="flex-between text-muted mt-1" style="font-size: 0.75rem;">
+                  <span>0.20 (Strict / Separate IDs)</span>
+                  <span>0.45 (Balanced Default)</span>
+                  <span>0.65 (Permissive / Merge Same Person)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="faces-container" class="faces-grid mt-3">
+            <div class="empty-state" style="grid-column: 1 / -1;">
+              Loading faces registry...
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: AI CONNECTORS & SYSTEM -->
+      <section id="tab-connectors" class="tab-pane">
+        
+        <!-- FFmpeg & Video Engine Card -->
+        <div class="card" id="card-ffmpeg-management">
+          <div class="card-header">
+            <h2>🎬 FFmpeg & Media Processing Engine</h2>
+            <p class="card-desc">Required for video frame sampling, audio extraction, and container tagging. Automatically detected on your system path.</p>
+          </div>
+
+          <div class="ffmpeg-status-grid mt-2">
+            <div class="stat-card">
+              <span class="stat-name">FFmpeg Binary:</span>
+              <div class="flex-between mt-1">
+                <span id="ffmpeg-detected-status" class="badge-tag checking">Checking...</span>
+                <code id="ffmpeg-detected-path" style="font-size:0.75rem; color:#94a3b8;"></code>
+              </div>
+            </div>
+            <div class="stat-card">
+              <span class="stat-name">FFprobe Binary:</span>
+              <div class="flex-between mt-1">
+                <span id="ffprobe-detected-status" class="badge-tag checking">Checking...</span>
+                <code id="ffprobe-detected-path" style="font-size:0.75rem; color:#94a3b8;"></code>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <details class="advanced-paths">
+              <summary style="cursor:pointer; color:#38bdf8; font-size:0.85rem; font-weight:600;">
+                ⚙️ Manually locate / specify binary paths on host system
+              </summary>
+              <div class="form-grid mt-2">
+                <div class="form-group">
+                  <label for="cfg-ffmpeg-path">Custom FFmpeg Path</label>
+                  <input type="text" id="cfg-ffmpeg-path" class="form-control" placeholder="/usr/bin/ffmpeg or C:\tools\ffmpeg.exe">
+                </div>
+                <div class="form-group">
+                  <label for="cfg-ffprobe-path">Custom FFprobe Path</label>
+                  <input type="text" id="cfg-ffprobe-path" class="form-control" placeholder="/usr/bin/ffprobe or C:\tools\ffprobe.exe">
+                </div>
+              </div>
+              <div class="mt-2 flex-between">
+                <button id="btn-verify-ffmpeg-paths" class="btn btn-sm btn-secondary">Test Custom Paths</button>
+                <span id="verify-ffmpeg-result" style="font-size:0.8rem;"></span>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header flex-between">
+            <div>
+              <h2>🤖 Vision & Reasoning Backend</h2>
+              <p class="card-desc">Run on-device or offload heavy processing to a networked server (Ollama or LM Studio).</p>
+            </div>
+            <div id="backend-live-status-pill" class="badge-tag checking">Checking Backend...</div>
+          </div>
+
+          <!-- Current Backend Summary Strip -->
+          <div class="backend-summary-strip" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.6rem 1rem; margin-bottom: 1rem; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span class="text-muted">Active Host: </span><code id="summary-backend-host" style="color: #38bdf8;">Loading...</code>
+              <span class="text-muted" style="margin-left: 1rem;">Selected Model: </span><code id="summary-backend-model" style="color: #34d399;">Loading...</code>
+            </div>
+            <span id="summary-backend-state" class="badge-tag checking">Checking</span>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="cfg-vision-provider">Provider Type</label>
+              <select id="cfg-vision-provider" class="form-control">
+                <option value="ollama">Ollama (Local or Network Server)</option>
+                <option value="openai_compatible">LM Studio / OpenAI-Compatible (Local or Network)</option>
+                <option value="cloud">Cloud Fallback (Gemini / Anthropic / OpenAI)</option>
+              </select>
+            </div>
+
+            <!-- Ollama Section -->
+            <div id="section-ollama" class="provider-section">
+              <div class="form-group">
+                <label for="cfg-ollama-url">Ollama Host URL</label>
+                <input type="text" id="cfg-ollama-url" class="form-control" value="http://localhost:11434">
+                <small class="helper-text">To use a networked GPU PC or Unraid server, enter its IP (e.g., http://192.168.1.100:11434)</small>
+              </div>
+              <div class="form-group">
+                <label for="cfg-ollama-model">Vision Model</label>
+                <div class="input-with-button">
+                  <select id="cfg-ollama-model" class="form-control">
+                    <option value="llama3.2-vision">llama3.2-vision</option>
+                    <option value="qwen2.5vl">qwen2.5vl</option>
+                    <option value="minicpm-v">minicpm-v</option>
+                    <option value="llava">llava</option>
+                  </select>
+                  <button id="btn-test-ollama" class="btn btn-secondary">Test & Refresh Models</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- LM Studio / OpenAI-Compatible Section -->
+            <div id="section-openai" class="provider-section hidden">
+              <div class="form-group">
+                <label for="cfg-openai-url">Server Base URL</label>
+                <input type="text" id="cfg-openai-url" class="form-control" value="http://localhost:1234/v1">
+                <small class="helper-text">LM Studio or LocalAI server endpoint.</small>
+              </div>
+              <div class="form-group">
+                <label for="cfg-openai-model">Model Name</label>
+                <div class="input-with-button">
+                  <input type="text" id="cfg-openai-model" class="form-control" value="local-model">
+                  <button id="btn-test-openai" class="btn btn-secondary">Test Connection</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cloud Fallback Section -->
+            <div id="section-cloud" class="provider-section hidden">
+              <div class="form-group">
+                <label for="cfg-cloud-provider">Cloud Provider</label>
+                <select id="cfg-cloud-provider" class="form-control">
+                  <option value="gemini">Google Gemini</option>
+                  <option value="anthropic">Anthropic Claude</option>
+                  <option value="openai">OpenAI GPT-4o</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="cfg-cloud-key">API Key</label>
+                <input type="password" id="cfg-cloud-key" class="form-control" placeholder="sk-...">
+              </div>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <h3>⚡ Pipeline Concurrency & Execution Mode</h3>
+          <p class="card-desc">Prevent hardware overload by executing stages in serial order, or run audio and frames in parallel when backends are independent.</p>
+          <div class="form-grid mt-2">
+            <div class="form-group">
+              <label for="cfg-pipeline-execution-mode">Extraction & AI Execution Mode</label>
+              <select id="cfg-pipeline-execution-mode" class="form-control">
+                <option value="serial">Serial Processing (Default — Safest for Local Hardware / Low VRAM)</option>
+                <option value="concurrent">Concurrent Processing (Parallel Audio & Frame Extraction)</option>
+              </select>
+              <small class="helper-text">Serial mode ensures Whisper audio extraction and Vision frame reasoning run sequentially, avoiding GPU memory spikes.</small>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <h3>⏱️ Long Video Detail Level & Frame Sampling</h3>
+          <p class="card-desc">Engineered for stability on videos up to several hours long. Choose how densely to sample footage and set frame safety caps to prevent AI context overload.</p>
+          
+          <div class="form-grid mt-2">
+            <div class="form-group">
+              <label for="cfg-sampling-strategy">Sampling Strategy</label>
+              <select id="cfg-sampling-strategy" class="form-control">
+                <option value="interval">⏱️ Time Interval (Sample every N seconds/minutes)</option>
+                <option value="key_moments">🎬 Overall Key Moments (Narrative milestones & scene boundaries)</option>
+              </select>
+              <small class="helper-text">Choose between even time-based intervals or milestone key moments across the footage.</small>
+            </div>
+
+            <div class="form-group" id="grp-sampling-interval">
+              <label for="cfg-sampling-interval">Interval Between Samples</label>
+              <select id="cfg-sampling-interval" class="form-control">
+                <option value="30">Every 30 seconds (High detail / short to medium clips)</option>
+                <option value="60" selected>Every 1 minute (Recommended for 15-60 min videos)</option>
+                <option value="120">Every 2 minutes (Balanced for 1-2 hour videos)</option>
+                <option value="300">Every 5 minutes (Efficient for 2-4 hour videos)</option>
+                <option value="600">Every 10 minutes (Broad overview for very long archives)</option>
+              </select>
+              <small class="helper-text">Frequency of frame extraction across long video timelines.</small>
+            </div>
+          </div>
+
+          <div class="card p-3 mt-2" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px;">
+            <div class="flex-between align-center mb-1">
+              <label for="cfg-max-frames" style="font-weight: 600; color: var(--text-main);">
+                🛡️ Maximum Frame Safety Cap
+              </label>
+              <span id="badge-max-frames" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.9rem; padding: 0.2rem 0.6rem;">30 frames</span>
+            </div>
+            <input type="range" id="cfg-max-frames" class="form-range w-100" min="15" max="60" step="5" value="30" style="width: 100%;">
+            
+            <div class="slider-ticks flex-between mt-1 text-muted" style="font-size: 0.75rem;">
+              <span>15 (Low VRAM / Faster)</span>
+              <span>30 (Balanced Standard)</span>
+              <span>60 (Maximum Detail)</span>
+            </div>
+
+            <div class="helper-box mt-2 p-2" style="background: rgba(30, 41, 59, 0.7); border-radius: 6px; font-size: 0.8rem; line-height: 1.4;">
+              <p><strong>ℹ️ Stability Guarantee:</strong> If a multi-hour video produces more candidate frames than this safety cap, the system automatically applies <em>smart uniform decimation</em>. This ensures the <strong>entire timeline from start to finish is covered</strong> while strictly preventing VLM context overflow and GPU out-of-memory errors.</p>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <h3>💬 Subtitle Ingestion & Context</h3>
+          <p class="card-desc">Use preexisting <code>.srt</code> files (dropped together or placed next to video) or embedded subtitle tracks as dialogue context.</p>
+          <div class="checkbox-grid mt-2">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-use-subtitles" checked>
+              <b>Use Preexisting / Embedded Subtitles as Context</b>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-prefer-subtitles" checked>
+              <span>Prefer Subtitles over Whisper (Saves transcription time if subtitles found)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-full-transcription-fallback" checked>
+              <span>Full Transcription Fallback (Run Whisper if no subtitles are found)</span>
+            </label>
+          </div>
+
+          <hr class="divider">
+
+          <h3>🎙️ Audio Speech-to-Text (Whisper)</h3>
+          <p class="card-desc">Transcribe dialogue to enrich AI descriptions and automatically export <code>.srt</code> subtitle sidecars. Choose local processing or connect to a remote OpenAI-compatible Whisper server (e.g. TrueNAS SCALE, Docker, vLLM, LocalAI).</p>
+          
+          <div class="mt-2">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-transcribe-audio" checked>
+              <b>Enable Audio Transcription during processing</b>
+            </label>
+          </div>
+
+          <div class="form-grid mt-2">
+            <div class="form-group">
+              <label for="cfg-whisper-backend">Whisper Execution Engine</label>
+              <select id="cfg-whisper-backend" class="form-control">
+                <option value="faster-whisper">Local Built-in (faster-whisper - offline CPU/GPU)</option>
+                <option value="remote">Remote Server (OpenAI-Compatible / TrueNAS SCALE / Docker)</option>
+                <option value="openai-whisper">Standard OpenAI Whisper (python library)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Remote Whisper Server Panel -->
+          <div id="section-whisper-remote" class="card p-3 mt-2 hidden" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px;">
+            <div class="flex-between align-center mb-1">
+              <span style="font-weight: 600; color: var(--text-main);">📡 Remote Whisper Server Endpoint</span>
+              <span class="badge" style="background: var(--primary); font-size: 0.75rem;">OpenAI Compatible</span>
+            </div>
+            <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 0.75rem;">
+              Connects to <code>/v1/audio/transcriptions</code> and <code>/v1/models</code> on your local network (e.g., TrueNAS SCALE with <code>hwdsl2/whisper-server</code> or <code>whisper-asr-webservice</code>).
+            </p>
+
+            <div class="form-grid">
+              <div class="form-group" style="grid-column: span 2;">
+                <label for="cfg-whisper-remote-url" style="font-weight: 600;">Server Address & Port</label>
+                <input type="text" id="cfg-whisper-remote-url" class="form-control" placeholder="http://192.168.1.100:9000 (or http://truenas:9000/v1)">
+                <small class="text-muted" style="font-size: 0.75rem;">Base URL with port. The app automatically targets <code>/v1/audio/transcriptions</code>.</small>
+              </div>
+
+              <div class="form-group">
+                <label for="cfg-whisper-api-key" style="font-weight: 600;">API Key / Bearer Token</label>
+                <input type="password" id="cfg-whisper-api-key" class="form-control" placeholder="Optional (leave empty if none)">
+                <small class="text-muted" style="font-size: 0.75rem;">Sent in <code>Authorization: Bearer</code> header if required.</small>
+              </div>
+
+              <div class="form-group">
+                <label for="cfg-whisper-remote-model" style="font-weight: 600;">Model Name</label>
+                <input type="text" id="cfg-whisper-remote-model" class="form-control" list="whisper-remote-models-datalist" placeholder="base, small, medium, large-v3, or custom">
+                <datalist id="whisper-remote-models-datalist">
+                  <option value="tiny">
+                  <option value="base">
+                  <option value="small">
+                  <option value="medium">
+                  <option value="large-v3">
+                  <option value="turbo">
+                  <option value="whisper-1">
+                </datalist>
+                <small class="text-muted" style="font-size: 0.75rem;">Type a model name or select from server-discovered models below.</small>
+              </div>
+            </div>
+
+            <div class="flex-between align-center mt-3" style="flex-wrap: wrap; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color);">
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button type="button" id="btn-test-whisper-remote" class="btn btn-secondary">
+                  ⚡ Test Connection & Fetch Models
+                </button>
+              </div>
+              <span id="whisper-remote-test-status" style="font-size: 0.85rem; font-weight: 500;"></span>
+            </div>
+          </div>
+
+          <!-- Local Whisper Panel -->
+          <div id="section-whisper-local" class="card p-3 mt-2" style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-color); border-radius: 8px;">
+            <div class="form-group">
+              <label for="cfg-whisper-model" style="font-weight: 600;">Local Whisper Model Size</label>
+              <select id="cfg-whisper-model" class="form-control">
+                <option value="tiny">Tiny (~75 MB, ultra-fast)</option>
+                <option value="base">Base (~140 MB, recommended)</option>
+                <option value="small">Small (~460 MB, balanced)</option>
+                <option value="medium">Medium (~1.5 GB, high accuracy)</option>
+                <option value="large-v3">Large-v3 (~3 GB, best quality)</option>
+              </select>
+              <small class="text-muted" style="font-size: 0.75rem;">Downloaded and cached locally on this machine.</small>
+            </div>
+
+            <div class="mt-2 text-muted" style="font-size:0.8rem;">
+              <span>Whisper Models Cache: </span><code id="whisper-cache-path" style="background:#1e293b; padding:2px 6px; border-radius:4px; color:#38bdf8;">Loading...</code>
+              <div id="whisper-downloaded-tags" class="mt-1"></div>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <h3>👤 Facial Recognition & Person Identification</h3>
+          <p class="card-desc">Identify family members and recurring individuals. Uses built-in local clustering by default or connects to an external CompreFace server.</p>
+
+          <div class="mt-2">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-face-enabled">
+              <b>Enable Facial Recognition during queue processing</b>
+            </label>
+          </div>
+
+          <div id="face-settings-panel" class="mt-2">
+            <div class="form-group">
+              <label for="cfg-face-provider">Recognition Engine</label>
+              <select id="cfg-face-provider" class="form-control">
+                <option value="builtin">Built-in Neural Engine (Offline / Private / YuNet CPU)</option>
+                <option value="compreface">External CompreFace Server (Network REST API)</option>
+              </select>
+            </div>
+
+            <!-- Built-in Neural Face Engine Settings -->
+            <div id="section-builtin-face" class="mt-3">
+              <div class="card p-3 mb-3" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px;">
+                <div class="flex-between align-center mb-1">
+                  <label for="cfg-face-confidence" style="font-weight: 600; color: var(--text-main);">
+                    🎯 Minimum Face Detection Confidence
+                  </label>
+                  <span id="badge-face-confidence" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.9rem; padding: 0.2rem 0.6rem;">0.70</span>
+                </div>
+                <input type="range" id="cfg-face-confidence" class="form-range w-100" min="0.30" max="0.95" step="0.05" value="0.70" style="width: 100%;">
+                
+                <div class="slider-ticks flex-between mt-1 text-muted" style="font-size: 0.75rem;">
+                  <span>0.30 (Permissive)</span>
+                  <span>0.70 (Recommended Default)</span>
+                  <span>0.95 (Ultra-Strict)</span>
+                </div>
+
+                <div class="helper-box mt-2 p-2" style="background: rgba(30, 41, 59, 0.7); border-radius: 6px; font-size: 0.8rem; line-height: 1.4;">
+                  <p><strong>ℹ️ What this controls:</strong> Minimum neural probability required to recognize a shape as an actual human face (rejecting non-face artifacts).</p>
+                  <ul style="margin: 0.3rem 0 0 1.2rem; padding: 0;">
+                    <li><strong>Higher values (0.75 - 0.90):</strong> <em>Recommended to eliminate false positives</em>. Enforces strict verification of eyes, nose, and mouth. Rejects hands, elbows, knees, cloth folds, and textured background patterns.</li>
+                    <li><strong>Lower values (0.30 - 0.60):</strong> Increases sensitivity for distant, blurred, or partially shadowed faces, but may capture false positives.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="card p-3" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px;">
+                <div class="flex-between align-center mb-1">
+                  <label for="cfg-face-distance" style="font-weight: 600; color: var(--text-main);">
+                    👥 Maximum Recognition Distance (Person Coherence)
+                  </label>
+                  <span id="badge-face-distance" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.9rem; padding: 0.2rem 0.6rem;">Distance: 0.45 (Similarity: 0.55)</span>
+                </div>
+                <input type="range" id="cfg-face-distance" class="form-range w-100" min="0.20" max="0.65" step="0.02" value="0.45" style="width: 100%;">
+                
+                <div class="slider-ticks flex-between mt-1 text-muted" style="font-size: 0.75rem;">
+                  <span>0.20 (Strict / Distinct Identities)</span>
+                  <span>0.45 (Balanced / High Coherence)</span>
+                  <span>0.65 (Permissive / Merged)</span>
+                </div>
+
+                <div class="helper-box mt-2 p-2" style="background: rgba(30, 41, 59, 0.7); border-radius: 6px; font-size: 0.8rem; line-height: 1.4;">
+                  <p><strong>ℹ️ What this controls:</strong> Clustering tolerance when linking detected faces to person profiles (e.g. <code>Person_01</code>).</p>
+                  <ul style="margin: 0.3rem 0 0 1.2rem; padding: 0;">
+                    <li><strong>Higher Distance (0.45 - 0.60):</strong> <em>Recommended if the same person is split into multiple entries</em>. Clusters varied camera angles, head turns, expressions, smiles, and lighting changes into a single individual.</li>
+                    <li><strong>Lower Distance (0.20 - 0.35):</strong> <em>Stricter identity separation</em>. Distinguishes very similar-looking siblings or relatives, but may create multiple profiles for the same person if lighting or hairstyle changes.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- External CompreFace Configuration -->
+            <div id="section-compreface" class="provider-section hidden mt-2">
+              <div class="form-group">
+                <label for="cfg-compreface-url">CompreFace Server URL</label>
+                <input type="text" id="cfg-compreface-url" class="form-control" placeholder="http://192.168.1.100:8000">
+              </div>
+              <div class="form-group">
+                <label for="cfg-compreface-key">API Key (Recognition Service)</label>
+                <div class="input-with-button">
+                  <input type="password" id="cfg-compreface-key" class="form-control" placeholder="00000000-0000-0000-0000-000000000000">
+                  <button id="btn-test-compreface" class="btn btn-secondary">Test Connection</button>
+                </div>
+                <small class="helper-text" id="compreface-test-status"></small>
+              </div>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <h3>📄 Sidecar & Metadata Export Standards</h3>
+          <p class="card-desc">Choose which formats and metadata standards to generate for your video player, media server, or DAM organizer.</p>
+
+          <div class="form-group mt-2">
+            <label for="cfg-metadata-preset">Target Media System Preset</label>
+            <select id="cfg-metadata-preset" class="form-control">
+              <option value="all">Universal Archive (All Formats: NFO, XMP, JSON, TXT, SRT, EDL)</option>
+              <option value="jellyfin">Kodi / Jellyfin / Plex Library (NFO + TXT + JSON + SRT)</option>
+              <option value="digikam">DigiKam / Adobe Lightroom (XMP + TXT + JSON + SRT)</option>
+              <option value="custom">Custom Format Selection</option>
+            </select>
+          </div>
+
+          <div class="checkbox-grid mt-2">
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-nfo" checked> Kodi / Jellyfin / Plex (<code>.nfo</code>)</label>
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-xmp" checked> Adobe / DigiKam Sidecar (<code>.xmp</code>)</label>
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-txt" checked> Timestamped Text Summary (<code>.txt</code>)</label>
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-json" checked> Structured Metadata (<code>.info.json</code>)</label>
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-srt" checked> Full Subtitles / Dialogue (<code>.srt</code>)</label>
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-edl"> DaVinci Resolve Timeline Markers (<code>.edl</code>)</label>
+          </div>
+
+          <hr class="divider">
+
+          <h3>🧹 Temporary Frame & Audio Cache Retention</h3>
+          <p class="card-desc">Controls how long sampled video screenshot frames and extracted audio WAV files stay in the cache directory.</p>
+          <div class="form-grid mt-2">
+            <div class="form-group">
+              <label for="cfg-temp-retention">Retention Policy</label>
+              <select id="cfg-temp-retention" class="form-control">
+                <option value="immediate">Delete immediately after processing clip (Default / Recommended)</option>
+                <option value="1_day">Retain for 1 day (24 hours)</option>
+                <option value="7_days">Retain for 7 days (1 week)</option>
+                <option value="30_days">Retain for 30 days (1 month)</option>
+                <option value="persistent">Keep indefinitely (Persistent cache)</option>
+              </select>
+              <small class="helper-text">Immediate deletion automatically frees disk space as soon as each video analysis finishes.</small>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <h3>🏷️ Automated Post-Processing Actions</h3>
+          <p class="card-desc">Automatically rename files and/or apply container metadata tags directly to videos as each queue task finishes.</p>
+          <div class="checkbox-grid mt-2">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-auto-rename">
+              <b>Auto-rename files upon completion</b>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-auto-tag">
+              <b>Auto-apply container tags upon completion (In-File Metadata)</b>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-backup-before-tagging" checked>
+              <span>Backup original file before container tagging</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-verify-tag-integrity" checked>
+              <span>Verify stream integrity before replacing original</span>
+            </label>
+          </div>
+
+          <hr class="divider">
+
+          <h3>✨ AI Filename Naming Scheme</h3>
+          <p class="card-desc">Choose how AI titles, event information, and folder/collection context are synthesized into filenames. If a name has previously been used, a zero-padded serialized numerator (<code>_01</code>, <code>_02</code>, etc.) is automatically appended to prevent collisions.</p>
+          
+          <div class="alert info-alert" style="background: rgba(30,58,138,0.25); border: 1px solid rgba(59,130,246,0.4); border-radius: 8px; padding: 0.75rem 1rem; margin-top: 0.5rem; font-size: 0.85rem; line-height: 1.5;">
+            <strong>💡 How AI Naming Works:</strong> When your video is analyzed by the vision model, it generates a concise, descriptive <b>AI Title</b> (e.g. <code>Kids_Birthday_Party</code>) and web-safe <b>AI Slug</b> (e.g. <code>kids_birthday_party</code>). The template combines this title with metadata like the video's recorded creation date.
+          </div>
+
+          <div class="form-grid mt-3">
+            <div class="form-group">
+              <label for="cfg-rename-scheme">Naming Scheme Preset</label>
+              <select id="cfg-rename-scheme" class="form-control">
+                <option value="compact_zulu_title">Compact Date + Zulu Time + AI Title (YYYYMMDD_HHMMSSZ_{title})</option>
+                <option value="compact_zulu_names_title">Compact Date + Zulu Time + Names + Title (YYYYMMDD_HHMMSSZ_{names}_{title})</option>
+                <option value="compact_time_title">Compact Date + Local Time + AI Title (YYYYMMDD_HHMMSS_{title})</option>
+                <option value="compact_dashed_time_title">Compact Date + Dashed Time + AI Title (YYYYMMDD_HH-MM-SS_{title})</option>
+                <option value="compact_date_title">Compact Date + AI Title (YYYYMMDD_{title})</option>
+                <option value="date_title">ISO Date + AI Title (YYYY-MM-DD_{title})</option>
+                <option value="date_time_title">ISO Date + Time + AI Title (YYYY-MM-DD_HHMMSS_{title})</option>
+                <option value="folder_date_title">Folder/Collection + Date + AI Title ({folder}_{date}_{title})</option>
+                <option value="original_title">Original Name + AI Title ({original}_{title})</option>
+                <option value="title_only">AI Title Only ({title})</option>
+                <option value="ai_slug">Direct AI Suggested Slug ({ai_slug})</option>
+                <option value="custom">Custom Template String</option>
+              </select>
+            </div>
+            <div class="form-group" id="cfg-custom-template-group">
+              <label for="cfg-rename-template">Filename Template</label>
+              <input type="text" id="cfg-rename-template" class="form-control" value="{date_compact}_{time_zulu}_{title}">
+              <small class="helper-text">Variables: <code>{date_compact}</code> (YYYYMMDD), <code>{date}</code>, <code>{time_zulu}</code> (HHMMSSZ), <code>{time_dashed}</code>, <code>{time}</code>, <code>{names}</code>, <code>{title}</code>, <code>{original}</code>, <code>{folder}</code></small>
+            </div>
+          </div>
+
+          <div class="form-grid mt-2">
+            <div class="form-group">
+              <label for="cfg-max-title-length">Maximum AI Title Length</label>
+              <select id="cfg-max-title-length" class="form-control">
+                <option value="20">20 characters (Ultra-compact)</option>
+                <option value="30">30 characters (Short)</option>
+                <option value="50" selected>50 characters (Recommended Standard)</option>
+                <option value="80">80 characters (Detailed)</option>
+                <option value="0">Unlimited (Full title)</option>
+              </select>
+              <small class="helper-text">Truncates title component cleanly to prevent exceeding filesystem path limits.</small>
+            </div>
+
+            <div class="form-group" style="display:flex; flex-direction:column; justify-content:center;">
+              <label class="checkbox-label" style="margin-top:1.2rem;">
+                <input type="checkbox" id="cfg-include-names">
+                <b>Insert recognized person names into filenames</b>
+              </label>
+              <small class="helper-text">When people from your face database are identified in footage, automatically inject their names into the file name.</small>
+            </div>
+          </div>
+
+          <div class="form-grid mt-2">
+            <div class="form-group">
+              <label for="cfg-date-source">Date & Time Extraction Strategy</label>
+              <select id="cfg-date-source" class="form-control">
+                <option value="smart" selected>🧠 Smart Auto (Filename if present, otherwise file metadata)</option>
+                <option value="filename">📁 Prefer Filename Date (Extracts YYYYMMDD from filename first)</option>
+                <option value="metadata">⚙️ Strictly File Properties / Metadata (creation_time)</option>
+              </select>
+              <small class="helper-text">Recommended: Smart Auto protects against cameras whose internal clock reset to 2004 or 1970.</small>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-default-date-override">Default Batch Date Override (Optional)</label>
+              <input type="text" id="cfg-default-date-override" class="form-control" placeholder="YYYY-MM-DD (leave empty for automatic detection)">
+              <small class="helper-text">If set, forces all queued files to use this date unless overridden per-task.</small>
+            </div>
+          </div>
+
+          <!-- Live Preview Card -->
+          <div class="rename-preview-card mt-3" style="background: rgba(15,23,42,0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1.15rem;">
+            <div style="font-size: 0.8rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">
+              🔍 Live Template Preview
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+              <span style="font-size: 0.85rem; color: var(--text-color);">Evaluated Example:</span>
+              <code id="cfg-rename-preview-example" style="font-size: 0.95rem; color: #34d399; font-weight: bold; background: rgba(0,0,0,0.3); padding: 0.25rem 0.6rem; border-radius: 6px;">20240518_183000_Kids_Birthday_Party.mp4</code>
+            </div>
+            <div style="font-size: 0.75rem; color: #64748b; margin-top: 0.35rem;">
+              Using sample values: <code>{date_compact}</code> = 20240518, <code>{time_zulu}</code> = 183000, <code>{names}</code> = Grandma_Betty, <code>{title}</code> = Kids_Birthday_Party
+            </div>
+          </div>
+
+          <div class="mt-4" style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+            <button id="btn-save-config" class="btn btn-primary">💾 Save Settings</button>
+            <button id="btn-export-config" type="button" class="btn btn-secondary" title="Export settings as machine-readable JSON">📤 Export Settings (JSON)</button>
+            <button id="btn-import-config" type="button" class="btn btn-secondary" title="Import settings from a JSON file">📥 Import Settings...</button>
+            <button id="btn-download-logs-settings" type="button" class="btn btn-secondary" title="Download persistent application log file">📜 Download Logs</button>
+            <input type="file" id="file-import-config" accept=".json,application/json" style="display:none;">
+            <span id="save-config-status" class="ml-2 success-text hidden">Saved!</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: PRIVACY & STORAGE -->
+      <section id="tab-privacy" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <h2>🔒 Storage Transparency & Privacy Governance</h2>
+            <p class="card-desc">Full visibility and control over where data is stored on your machine. Easily purge private cached frames, uploaded media, or reset application data.</p>
+          </div>
+
+          <div class="storage-paths-box">
+            <h3>Filesystem Locations</h3>
+            <div class="path-item">
+              <span class="path-label">Application Data:</span>
+              <code id="path-base-data">Loading...</code>
+            </div>
+            <div class="path-item">
+              <span class="path-label">Temporary Cache (Extracted Frames & Audio):</span>
+              <code id="path-cache">Loading...</code>
+            </div>
+            <div class="path-item">
+              <span class="path-label">Whisper Models Directory:</span>
+              <code id="path-models">Loading...</code>
+            </div>
+            <div class="path-item">
+              <span class="path-label">Remote Uploads Staging Directory:</span>
+              <code id="path-uploads">Loading...</code>
+            </div>
+            <div class="path-item">
+              <span class="path-label">History & Rename Logs:</span>
+              <code id="path-history">Loading...</code>
+            </div>
+            <div class="path-item">
+              <span class="path-label">Config File:</span>
+              <code id="path-config">Loading...</code>
+            </div>
+          </div>
+
+          <div class="storage-usage-box mt-3">
+            <h3>Current Storage Usage</h3>
+            <div class="usage-stats-grid">
+              <div class="stat-card">
+                <span class="stat-num" id="usage-cache-size">0 B</span>
+                <span class="stat-name">Cache Size (<span id="usage-frames-count">0</span> frames, <span id="usage-audio-count">0</span> audio clips)</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-num" id="usage-uploads-size">0 B</span>
+                <span class="stat-name">Uploads Size (<span id="usage-uploads-count">0</span> files)</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-num" id="usage-models-size">0 B</span>
+                <span class="stat-name">Whisper Models</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-num" id="usage-total-size">0 B</span>
+                <span class="stat-name">Total Disk Usage</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="privacy-actions mt-4">
+            <h3>Data Removal Options</h3>
+            <p class="text-muted">Purging cache or uploads removes temporary files staged on the server. It never deletes original media located in local host directories.</p>
+            <div class="btn-group mt-2">
+              <button id="btn-purge-cache" class="btn btn-warning">🗑️ Purge Temporary Cache</button>
+              <button id="btn-purge-uploads" class="btn btn-warning">🗑️ Clear Uploaded Videos Staging</button>
+              <button id="btn-purge-history" class="btn btn-secondary">Clear Activity & Rename History</button>
+              <button id="btn-factory-reset" class="btn btn-danger">⚠️ Full Factory Reset</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+    </main>
+  </div>
+
+  <!-- Analysis Results Modal -->
+  <div id="modal-results" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header flex-between">
+        <div>
+          <h2 id="results-modal-title">🎞️ Video Analysis Results</h2>
+          <span id="results-modal-filename" class="text-muted" style="font-size:0.85rem;"></span>
+        </div>
+        <button id="btn-close-results-modal" class="modal-close-btn" title="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Title & Suggested Filename -->
+        <div class="results-field-group">
+          <label class="results-label">AI Title & Suggested Filename</label>
+          <div class="results-title-box">
+            <h3 id="results-display-title"></h3>
+            <div id="results-suggested-name-box" class="mt-1">
+              <span class="text-muted" style="font-size:0.8rem;">Suggested Name: </span>
+              <code id="results-suggested-name" style="color:#38bdf8; font-size:0.85rem;"></code>
+            </div>
+          </div>
+        </div>
+
+        <!-- Description / Summary -->
+        <div class="results-field-group mt-3">
+          <label class="results-label">Content Summary & Description</label>
+          <div id="results-display-summary" class="results-summary-text"></div>
+        </div>
+
+        <!-- Key Moments / Events -->
+        <div class="results-field-group mt-3">
+          <label class="results-label">Key Moments & Timestamped Events</label>
+          <div id="results-display-events" class="results-events-list">
+            <!-- Events rendered here -->
+          </div>
+        </div>
+
+        <!-- Tags & 1-Click Copy -->
+        <div class="results-field-group mt-3">
+          <div class="flex-between">
+            <label class="results-label">Keywords / Tags</label>
+            <button id="btn-copy-tags" class="btn btn-sm btn-primary">📋 Copy Tags</button>
+          </div>
+          <input type="text" id="results-display-tags" class="form-control mt-1" readonly placeholder="No tags extracted">
+          <div id="results-tags-pills" class="tags-pills mt-2"></div>
+        </div>
+
+        <!-- Detected Subjects / People -->
+        <div id="results-group-people" class="results-field-group mt-3 hidden">
+          <label class="results-label">👥 People & Identified Subjects</label>
+          <div id="results-display-people" class="tags-pills mt-1"></div>
+        </div>
+
+        <!-- Detected Animals & Pets -->
+        <div id="results-group-animals" class="results-field-group mt-3 hidden">
+          <label class="results-label">🐕 Animals & Pets (Dogs, Breeds, Cats)</label>
+          <div id="results-display-animals" class="tags-pills mt-1"></div>
+        </div>
+
+        <!-- Detected Physical Objects & Gear (Interactive) -->
+        <div id="results-group-objects" class="results-field-group mt-3">
+          <div class="flex-between">
+            <label class="results-label">🎾 Objects, Gear & Equipment</label>
+            <small class="text-muted" style="font-size:0.75rem;">Click (×) to remove or type below to tag</small>
+          </div>
+          <div id="results-display-objects" class="tags-pills mt-1"></div>
+          <div class="input-with-button mt-2" style="max-width:320px;">
+            <input type="text" id="input-new-object-tag" class="form-control form-control-sm" placeholder="e.g. tennis racket, bicycle">
+            <button id="btn-add-object-tag" type="button" class="btn btn-secondary btn-sm">+ Add Object</button>
+          </div>
+        </div>
+
+        <!-- Audio Transcript / Subtitles -->
+        <div id="results-group-transcript" class="results-field-group mt-3 hidden">
+          <div class="flex-between">
+            <label class="results-label" id="results-transcript-label">Transcribed Speech / Dialogue</label>
+            <span id="results-transcript-badge" class="badge-tag processed" style="font-size: 0.75rem;">Whisper</span>
+          </div>
+          <div id="results-display-transcript" class="results-transcript"></div>
+        </div>
+
+        <hr class="divider mt-4">
+
+        <!-- Downloads / Export Buttons -->
+        <div class="results-field-group mt-3">
+          <label class="results-label">Download Metadata Sidecars & Media</label>
+          <div class="results-downloads-grid mt-2">
+            <a id="btn-download-nfo" href="#" class="btn btn-secondary" download>
+              🎬 Download .NFO (Jellyfin/Plex)
+            </a>
+            <a id="btn-download-xmp" href="#" class="btn btn-secondary" download>
+              🏷️ Download .XMP / .XML Sidecar
+            </a>
+            <a id="btn-download-txt" href="#" class="btn btn-secondary" download>
+              📄 Download .TXT Description
+            </a>
+            <a id="btn-download-json" href="#" class="btn btn-secondary" download>
+              📦 Download .INFO.JSON
+            </a>
+            <a id="btn-download-srt" href="#" class="btn btn-secondary hidden" download>
+              💬 Download .SRT Subtitles
+            </a>
+            <a id="btn-download-edl" href="#" class="btn btn-secondary hidden" download>
+              🎞️ Download .EDL Timeline
+            </a>
+            <button id="btn-download-video-options" type="button" class="btn btn-primary">
+              📥 Download Video (Tags & Subtitles Embedded)...
+            </button>
+            <a id="btn-download-video" href="#" class="btn btn-secondary hidden" download>
+              📥 Raw Video File
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer flex-between">
+        <span id="results-meta-footer" class="text-muted" style="font-size:0.75rem;"></span>
+        <button id="btn-close-results-modal-bottom" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Host Filesystem Browser (Folder & File Picker) -->
+  <div id="modal-fs-browser" class="modal-backdrop hidden">
+    <div class="modal-dialog fs-modal-card">
+      <div class="modal-header flex-between">
+        <div>
+          <h2 id="fs-modal-title">📁 Browse Host Filesystem</h2>
+          <span class="subtext" id="fs-modal-subtitle">Navigate directories and select footage on the host machine</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <button id="btn-fs-native" class="btn btn-sm btn-secondary" title="Open native system dialog window">🖥️ System Dialog</button>
+          <button id="btn-close-fs-modal" class="modal-close-btn" title="Close">&times;</button>
+        </div>
+      </div>
+      
+      <div class="modal-body" style="padding: 1rem 1.5rem; display: flex; flex-direction: column; overflow: hidden; max-height: calc(85vh - 130px);">
+        <!-- Quick Location Shortcuts -->
+        <div class="fs-shortcuts-bar" id="fs-shortcuts-bar">
+          <!-- Shortcuts populated via API -->
+        </div>
+
+        <!-- Current Path & Navigation -->
+        <div class="fs-nav-bar flex-between">
+          <button id="btn-fs-up" class="btn btn-sm btn-secondary" title="Up one folder">⬆ Up</button>
+          <div class="fs-breadcrumb-box flex-grow" id="fs-breadcrumbs">
+            <!-- Clickable path breadcrumbs -->
+          </div>
+          <button id="btn-fs-refresh" class="btn btn-sm btn-secondary" title="Refresh folder">🔄</button>
+        </div>
+
+        <!-- Search / Filter in Directory -->
+        <div class="fs-filter-bar mt-2">
+          <input type="text" id="fs-filter-input" class="form-control" placeholder="Type to filter folders & video files in current view...">
+        </div>
+
+        <!-- Explorer Body -->
+        <div class="fs-explorer-container mt-2">
+          <div class="fs-list-header flex-between">
+            <span id="fs-listing-count">Loading contents...</span>
+            <div id="fs-multi-select-controls" class="hidden" style="display:flex; gap:0.5rem;">
+              <button id="btn-fs-select-all" class="btn btn-sm btn-secondary">Select All Videos</button>
+              <button id="btn-fs-deselect-all" class="btn btn-sm btn-secondary">Deselect All</button>
+            </div>
+          </div>
+          <div class="fs-list-view" id="fs-list-view">
+            <!-- Folders & Files Rendered Dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer flex-between">
+        <span id="fs-selected-summary" class="text-muted" style="font-size:0.85rem;"></span>
+        <div style="display:flex; gap:0.5rem;">
+          <button id="btn-fs-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="btn-fs-confirm" class="btn btn-primary">Select This Folder</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Conflict Resolution (Already Processed Files) -->
+  <div id="modal-conflict-resolve" class="modal-backdrop hidden">
+    <div class="modal-dialog" style="max-width: 620px;">
+      <div class="modal-header flex-between">
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <span style="font-size:1.4rem;">⚠️</span>
+          <div>
+            <h2 style="font-size:1.15rem; margin-bottom:2px;">Already Processed Files Detected</h2>
+            <span class="subtext">Existing metadata sidecars found for selected clip(s)</span>
+          </div>
+        </div>
+        <button id="btn-close-conflict-modal" class="modal-close-btn" title="Close">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.25rem 1.5rem; overflow-y: auto; max-height: 60vh;">
+        <p style="font-size: 0.9rem; color: var(--text-main); margin-bottom: 0.85rem;">
+          The following video(s) have already been analyzed and metadata files (<code style="color:var(--primary-color);">.txt</code>, <code style="color:var(--primary-color);">.info.json</code>, <code style="color:var(--primary-color);">.nfo</code>, etc.) exist:
+        </p>
+
+        <div id="conflict-file-list" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem; max-height: 180px; overflow-y: auto; margin-bottom: 1.25rem;">
+          <!-- Dynamically populated list of filenames -->
+        </div>
+
+        <div style="background: rgba(56, 189, 248, 0.08); border-left: 3px solid #38bdf8; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;">
+          <p style="font-size: 0.85rem; margin: 0; color: #94a3b8; line-height: 1.5;">
+            Choose whether to <strong style="color:#f43f5e;">overwrite</strong> existing metadata files with fresh analysis, or <strong style="color:#38bdf8;">enumerate</strong> with an incremented number (e.g. <code style="color:#e2e8f0;">video_01.txt</code>, <code style="color:#e2e8f0;">video_01.info.json</code>) to preserve previous results.
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-footer flex-between" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
+        <button id="btn-conflict-cancel" class="btn btn-secondary">Cancel</button>
+        <div style="display:flex; gap:0.6rem;">
+          <button id="btn-conflict-enumerate" class="btn btn-secondary" style="border-color: #38bdf8; color: #38bdf8;">
+            🔢 Enumerate (_01, _02)
+          </button>
+          <button id="btn-conflict-overwrite" class="btn btn-primary" style="background: #e11d48; border-color: #e11d48;">
+            🔄 Overwrite Existing
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Download Video with Embedded Tags and Subtitles -->
+  <div id="modal-download-video" class="modal-backdrop hidden">
+    <div class="modal-dialog" style="max-width: 580px;">
+      <div class="modal-header flex-between">
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <span style="font-size:1.4rem;">🎬</span>
+          <div>
+            <h2 style="font-size:1.15rem; margin-bottom:2px;">Download Processed Video</h2>
+            <span class="subtext" id="dl-modal-subtitle">Embed tags, soft subtitles, and choose your preferred filename</span>
+          </div>
+        </div>
+        <button id="btn-close-download-modal" class="modal-close-btn" title="Close">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.25rem 1.5rem; overflow-y: auto; max-height: 65vh;">
+        <!-- Download Filename Choice -->
+        <div class="download-opt-group">
+          <div class="download-opt-title">🏷️ Download Filename</div>
+          <div id="dl-naming-badge" class="mb-2" style="font-size:0.8rem; background:rgba(30,58,138,0.25); border:1px solid rgba(59,130,246,0.3); padding:0.4rem 0.75rem; border-radius:6px; display:flex; align-items:center; gap:0.4rem;">
+            <span>✨</span>
+            <span>AI Detected Title: <strong id="dl-ai-detected-title" style="color:#93c5fd;">Loading...</strong></span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:0.6rem; font-size:0.85rem;">
+            <label class="radio-label">
+              <input type="radio" name="dl-filename-choice" id="dl-name-configured" value="configured" checked>
+              <span>⚙️ Configured Scheme (from Settings): <code id="dl-lbl-configured-name" style="color:#34d399; font-weight:600;">Loading...</code></span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="dl-filename-choice" id="dl-name-date-ai" value="date_ai">
+              <span>Date + AI Title: <code id="dl-lbl-date-ai-name" style="color:#38bdf8;">2024-05-18_Kids_Birthday_Party.mp4</code></span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="dl-filename-choice" id="dl-name-ai-only" value="ai_only">
+              <span>AI Title Only: <code id="dl-lbl-ai-only-name" style="color:#a7f3d0;">Kids_Birthday_Party.mp4</code></span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="dl-filename-choice" id="dl-name-ai-slug" value="ai_slug">
+              <span>Web-safe AI Slug: <code id="dl-lbl-ai-slug-name" style="color:#fcd34d;">kids_birthday_party.mp4</code></span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="dl-filename-choice" id="dl-name-original" value="original">
+              <span>Original filename: <code id="dl-lbl-orig-name" style="color:#94a3b8;">video.mp4</code></span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="dl-filename-choice" id="dl-name-custom" value="custom">
+              <span>Custom filename</span>
+            </label>
+            <input type="text" id="dl-input-custom-name" class="form-control mt-1 hidden" placeholder="enter_custom_name.mp4">
+          </div>
+        </div>
+
+        <!-- Tag Embedding -->
+        <div class="download-opt-group">
+          <div class="download-opt-title">🏷️ Container Metadata Tags (In-File)</div>
+          <label class="checkbox-label" style="font-size:0.85rem;">
+            <input type="checkbox" id="dl-chk-embed-tags" checked>
+            <span>Embed Title, Summary, Tags, and Objects into video header (Lossless stream copy <code>-c copy</code>)</span>
+          </label>
+          <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.35rem; padding-left: 1.5rem;">
+            ✅ Writes to Windows Explorer Details (<b>Tags</b> column), macOS Finder Keywords, and media player headers.
+          </div>
+        </div>
+
+        <!-- Subtitle Embedding (Soft Track) -->
+        <div class="download-opt-group">
+          <div class="download-opt-title">💬 Subtitle Track (Soft Subtitles)</div>
+          <label class="checkbox-label" style="font-size:0.85rem;">
+            <input type="checkbox" id="dl-chk-embed-subtitles" checked>
+            <span>Embed accompanying dialogue (<code>.srt</code>) as a selectable subtitle track</span>
+          </label>
+          <div id="dl-subtitles-format-choice" class="mt-2" style="font-size:0.8rem; background:rgba(30,41,59,0.7); padding:0.6rem; border-radius:6px; line-height:1.4;">
+            <span id="dl-subtitles-note"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer flex-between" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
+        <button id="btn-cancel-download-modal" class="btn btn-secondary">Cancel</button>
+        <button id="btn-confirm-download-video" class="btn btn-primary" style="background: #2563eb; border-color: #2563eb;">
+          ⬇️ Download Video
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js?v=2.5.0"></script>
+</body>
+</html>

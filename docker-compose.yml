@@ -1,0 +1,18 @@
+services:
+  cinetag:
+    build: .
+    container_name: cinetag
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    volumes:
+      # Persistent configuration, cache, and history logs
+      - ./data:/data
+      # Mount your host video library here (adjust host path as needed)
+      - ${MEDIA_DIR:-./sample_videos}:/media
+    environment:
+      - VIDEO_DESCRIBER_DATA_DIR=/data
+      - DOCKER_CONTAINER=1
+    extra_hosts:
+      # Allows reaching Ollama or LM Studio running on host OS
+      - "host.docker.internal:host-gateway"

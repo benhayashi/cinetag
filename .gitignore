@@ -1,0 +1,51 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments & Dependencies
+.venv/
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# User Data, Logs, and Working Cache
+data/
+uploads/
+cache/
+history/
+logs/
+*.log
+*.sqlite
+*.sqlite3
+
+# External binaries (FFmpeg, Exiftool, etc.)
+bin/*
+!bin/.gitkeep
+
+# Pretrained local AI models / Face embeddings
+models/*.onnx
+models/*.bin
+models/weights/
+
+# Video backups and temp files
+*.bak
+*.tmp
+sample_videos/
+
+# Secrets and environment configs
+.env
+.env.*
+!.env.example
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
