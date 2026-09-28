@@ -92,3 +92,16 @@ def test_api_faces_reindex(tmp_path, monkeypatch):
     assert data["merged_count"] >= 1
     assert data["total_identities"] == 1
 
+
+def test_api_faces_backfill_thumbnails(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEO_DESCRIBER_DATA_DIR", str(tmp_path))
+    from src.server.api import face_registry
+    from unittest.mock import patch
+
+    with patch.object(face_registry, "backfill_missing_thumbnails", return_value=3):
+        res = client.post("/api/faces/backfill-thumbnails")
+        assert res.status_code == 200
+        assert res.json()["status"] == "ok"
+        assert res.json()["backfilled_count"] == 3
+
+

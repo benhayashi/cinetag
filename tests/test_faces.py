@@ -173,3 +173,77 @@ def test_recluster_and_reindex(tmp_path, monkeypatch):
     assert faces[0]["video_count"] == 2
 
 
+def test_register_named_subject_with_candidate_frames(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEO_DESCRIBER_DATA_DIR", str(tmp_path))
+    registry = FaceRegistry()
+
+    # Create dummy frame image
+    frame1 = tmp_path / "frame1.jpg"
+    img = Image.new("RGB", (200, 200), color="blue")
+    img.save(frame1)
+
+    from unittest.mock import patch
+    fake_face = {
+        "box": (10, 10, 50, 50),
+        "crop": Image.new("RGB", (60, 60), color="pink"),
+        "embedding": [0.5] * 128,
+        "confidence": 0.88
+    }
+
+    with patch.object(LocalFaceEngine, "detect_and_embed", return_value=[fake_face]):
+        pid, name = registry.register_named_subject(
+            name="Alice",
+            video_path="/videos/vacation.mp4",
+            frame_path=frame1,
+            candidate_frames=[frame1]
+        )
+    assert name == "Alice"
+    assert pid == "person_001"
+
+    person = registry.get_all()[0]
+    assert person["name"] == "Alice"
+    assert person["thumbnail"] is not None
+    assert (registry.thumbs_dir / person["thumbnail"]).exists()
+
+
+def test_backfill_missing_thumbnails(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEO_DESCRIBER_DATA_DIR", str(tmp_path))
+    registry = FaceRegistry()
+
+    # Create a registered person with missing thumbnail
+    now_iso = "2026-09-27T10:00:00"
+    registry._data["person_001"] = {
+        "id": "person_001",
+        "name": "Kaylee",
+        "thumbnail": None,
+        "embedding": [0.0] * 128,
+        "video_count": 1,
+        "video_paths": [str(tmp_path / "video1.mp4")],
+        "created_at": now_iso,
+        "last_seen": now_iso
+    }
+    registry._save()
+
+    test_frame = tmp_path / "extracted_frame.jpg"
+    Image.new("RGB", (200, 200), color="red").save(test_frame)
+
+    from unittest.mock import patch
+    fake_face = {
+        "box": (10, 10, 50, 50),
+        "crop": Image.new("RGB", (60, 60), color="pink"),
+        "embedding": [0.5] * 128,
+        "confidence": 0.88
+    }
+
+    with patch("src.media.sampler.extract_frames", return_value=[{"path": test_frame}]), \
+         patch.object(LocalFaceEngine, "detect_and_embed", return_value=[fake_face]), \
+         patch("pathlib.Path.exists", autospec=True, side_effect=lambda self: True):
+        count = registry.backfill_missing_thumbnails()
+
+    assert count == 1
+    person = registry.get_all()[0]
+    assert person["thumbnail"] == "person_001.jpg"
+    assert (registry.thumbs_dir / "person_001.jpg").exists()
+
+
+

@@ -1800,6 +1800,19 @@ def download_srt(file_path: str):
 def list_faces():
     """List all tracked face identities, auto-generated clusters, and thumbnail links."""
     faces = face_registry.get_all()
+    # Check if any face is missing a thumbnail on disk and has video_paths
+    has_missing = any(
+        (f.get("thumbnail") is None or not (face_registry.thumbs_dir / f.get("thumbnail", "")).exists())
+        and bool(f.get("video_paths"))
+        for f in faces
+    )
+    if has_missing:
+        try:
+            face_registry.backfill_missing_thumbnails()
+            faces = face_registry.get_all()
+        except Exception as e:
+            logger.warning(f"Error auto-backfilling thumbnails: {e}")
+
     return {"faces": faces, "total": len(faces)}
 
 @router.get("/faces/export")
@@ -1916,6 +1929,15 @@ def auto_guess_face_names():
         "status": "ok",
         "matches_count": len(matches),
         "matches": matches
+    }
+
+@router.post("/faces/backfill-thumbnails")
+def backfill_face_thumbnails():
+    """Scan registered persons with missing thumbnails and generate crops from their video files."""
+    count = face_registry.backfill_missing_thumbnails()
+    return {
+        "status": "ok",
+        "backfilled_count": count
     }
 
 @router.get("/faces/thumbnail/{filename}")

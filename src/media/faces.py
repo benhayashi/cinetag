@@ -20,12 +20,54 @@ try:
 except ImportError:
     cv2 = None
 
-_MODEL_PATH = Path(__file__).resolve().parent.parent.parent / "models" / "face_detection_yunet.onnx"
-
-from src.core.paths import get_faces_dir
+from src.core.paths import get_faces_dir, get_base_data_dir
 from src.core.config import AppConfig, load_config
 
 logger = logging.getLogger(__name__)
+
+YUNET_DOWNLOAD_URL = "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+YUNET_FALLBACK_URL = "https://raw.githubusercontent.com/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+
+def get_face_model_path() -> Path:
+    """Return path to YuNet face detection ONNX model, auto-downloading if missing."""
+    repo_model = Path(__file__).resolve().parent.parent.parent / "models" / "face_detection_yunet.onnx"
+    if repo_model.exists() and repo_model.stat().st_size > 50000:
+        return repo_model
+
+    data_model = get_base_data_dir() / "models" / "face_detection_yunet.onnx"
+    if data_model.exists() and data_model.stat().st_size > 50000:
+        return data_model
+
+    target = repo_model if repo_model.parent.exists() else data_model
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import urllib.request
+        logger.info(f"Downloading YuNet face detection model (227KB) to {target}...")
+        req = urllib.request.Request(YUNET_DOWNLOAD_URL, headers={"User-Agent": "CineTag/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read()
+            if len(data) > 50000:
+                target.write_bytes(data)
+                logger.info(f"Successfully downloaded face detection model ({len(data)} bytes).")
+                return target
+    except Exception as e:
+        logger.warning(f"Primary YuNet model download failed: {e}. Trying fallback URL...")
+        try:
+            import urllib.request
+            req = urllib.request.Request(YUNET_FALLBACK_URL, headers={"User-Agent": "CineTag/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = resp.read()
+                if len(data) > 50000:
+                    target.write_bytes(data)
+                    logger.info(f"Successfully downloaded face detection model from fallback ({len(data)} bytes).")
+                    return target
+        except Exception as e2:
+            logger.error(f"Fallback YuNet model download failed: {e2}")
+
+    return repo_model
+
+_MODEL_PATH = get_face_model_path()
 
 def cosine_similarity(a: List[float], b: List[float]) -> float:
     """Compute cosine similarity between two feature vectors."""
@@ -590,7 +632,8 @@ class FaceRegistry:
         self,
         name: str,
         video_path: str,
-        frame_path: Optional[Path] = None
+        frame_path: Optional[Path] = None,
+        candidate_frames: Optional[List[Path]] = None
     ) -> Tuple[str, str]:
         """Register or associate a named subject identified from video analysis."""
         with self._lock:
@@ -605,6 +648,37 @@ class FaceRegistry:
                     break
 
             now_iso = datetime.now().isoformat()
+
+            def _extract_subject_thumb(target_thumb_path: Path) -> Tuple[bool, Optional[List[float]]]:
+                all_cands: List[Path] = []
+                if frame_path and frame_path.exists():
+                    all_cands.append(frame_path)
+                if candidate_frames:
+                    for cf in candidate_frames:
+                        if cf and cf.exists() and cf not in all_cands:
+                            all_cands.append(cf)
+
+                face_crop = None
+                face_emb = None
+                for cf in all_cands:
+                    try:
+                        for conf in (0.60, 0.45):
+                            faces = LocalFaceEngine.detect_and_embed(cf, confidence=conf)
+                            if faces:
+                                face_crop = faces[0]["crop"]
+                                face_emb = faces[0].get("embedding")
+                                break
+                        if face_crop:
+                            break
+                    except Exception as e:
+                        logger.warning(f"Could not extract face from candidate frame {cf}: {e}")
+
+                if face_crop:
+                    crop_resized = face_crop.resize((150, 150), Image.Resampling.LANCZOS)
+                    crop_resized.save(target_thumb_path, "JPEG", quality=90)
+                    return True, face_emb
+                return False, None
+
             if match_id:
                 entry = self._data[match_id]
                 entry["last_seen"] = now_iso
@@ -612,6 +686,19 @@ class FaceRegistry:
                 if video_path not in vpaths:
                     vpaths.append(video_path)
                 entry["video_count"] = len(vpaths)
+
+                thumb_filename = entry.get("thumbnail") or f"{match_id}.jpg"
+                thumb_path = self.thumbs_dir / thumb_filename
+                if not thumb_path.exists():
+                    created, new_emb = _extract_subject_thumb(thumb_path)
+                    if created:
+                        entry["thumbnail"] = thumb_filename
+                        shots = entry.setdefault("face_shots", [])
+                        if not shots:
+                            shots.append({"filename": thumb_filename, "confidence": 0.85, "timestamp": now_iso})
+                        if new_emb and all(x == 0.0 for x in entry.get("embedding", [])):
+                            entry["embedding"] = new_emb
+
                 self._save()
                 return match_id, entry["name"]
             else:
@@ -628,17 +715,9 @@ class FaceRegistry:
                 thumb_filename = f"{person_id}.jpg"
                 thumb_path = self.thumbs_dir / thumb_filename
 
-                if frame_path and frame_path.exists():
-                    try:
-                        faces = LocalFaceEngine.detect_and_embed(frame_path, confidence=0.60)
-                        if faces:
-                            crop = faces[0]["crop"]
-                            crop_resized = crop.resize((150, 150), Image.Resampling.LANCZOS)
-                            crop_resized.save(thumb_path, "JPEG", quality=90)
-                    except Exception as e:
-                        logger.warning(f"Could not create thumbnail from frame: {e}")
+                created, face_emb = _extract_subject_thumb(thumb_path)
 
-                dummy_emb = [0.0] * 128
+                dummy_emb = face_emb or ([0.0] * 128)
                 self._data[person_id] = {
                     "id": person_id,
                     "name": clean_name,
@@ -647,7 +726,10 @@ class FaceRegistry:
                     "video_count": 1,
                     "video_paths": [video_path],
                     "created_at": now_iso,
-                    "last_seen": now_iso
+                    "last_seen": now_iso,
+                    "face_shots": [
+                        {"filename": thumb_filename, "confidence": 0.85, "timestamp": now_iso}
+                    ] if thumb_path.exists() else []
                 }
                 self._save()
                 return person_id, clean_name
@@ -706,6 +788,64 @@ class FaceRegistry:
                 self._save()
         return imported_count
 
+    def backfill_missing_thumbnails(self) -> int:
+        """
+        Scan all registered persons; for any person without a valid thumbnail,
+        inspect their associated video_paths, extract frames/faces,
+        and generate a thumbnail image.
+        Returns count of thumbnails successfully backfilled.
+        """
+        from src.media.sampler import extract_frames
+        count = 0
+        with self._lock:
+            for pid, info in list(self._data.items()):
+                thumb = info.get("thumbnail")
+                if thumb and (self.thumbs_dir / thumb).exists():
+                    continue
+
+                vpaths = info.get("video_paths", [])
+                for vp_str in vpaths:
+                    vp = Path(vp_str)
+                    if not vp.exists():
+                        continue
+
+                    try:
+                        frames = extract_frames(vp, interval_seconds=10, max_frames=5, max_dimension=512)
+                        fpaths = [Path(f["path"]) for f in frames if "path" in f]
+
+                        thumb_filename = f"{pid}.jpg"
+                        thumb_path = self.thumbs_dir / thumb_filename
+                        face_crop = None
+                        face_emb = None
+
+                        for fp in fpaths:
+                            for conf in (0.60, 0.45):
+                                faces = LocalFaceEngine.detect_and_embed(fp, confidence=conf)
+                                if faces:
+                                    face_crop = faces[0]["crop"]
+                                    face_emb = faces[0].get("embedding")
+                                    break
+                            if face_crop:
+                                break
+
+                        if face_crop:
+                            crop_resized = face_crop.resize((150, 150), Image.Resampling.LANCZOS)
+                            crop_resized.save(thumb_path, "JPEG", quality=90)
+                            info["thumbnail"] = thumb_filename
+                            shots = info.setdefault("face_shots", [])
+                            if not shots:
+                                shots.append({"filename": thumb_filename, "confidence": 0.85, "timestamp": datetime.now().isoformat()})
+                            if face_emb and all(x == 0.0 for x in info.get("embedding", [])):
+                                info["embedding"] = face_emb
+                            count += 1
+                            break
+                    except Exception as e:
+                        logger.warning(f"Could not backfill thumbnail for {pid} from {vp}: {e}")
+
+            if count > 0:
+                self._save()
+        return count
+
 # Global registry instance
 face_registry = FaceRegistry()
 
@@ -723,12 +863,13 @@ class LocalFaceEngine:
     @classmethod
     def _get_detector(cls, w: int, h: int, confidence: float = 0.70):
         """Create or configure a FaceDetectorYN instance for given image dimensions."""
-        if cv2 is None or not _MODEL_PATH.exists():
-            logger.warning(f"YuNet model or cv2 unavailable (model={_MODEL_PATH.exists()})")
+        model_path = get_face_model_path()
+        if cv2 is None or not model_path.exists():
+            logger.warning(f"YuNet model or cv2 unavailable (model={model_path.exists()})")
             return None
         try:
             detector = cv2.FaceDetectorYN_create(
-                str(_MODEL_PATH),
+                str(model_path),
                 "",
                 (w, h),
                 score_threshold=float(confidence),
@@ -741,7 +882,7 @@ class LocalFaceEngine:
             return None
 
     @classmethod
-    def detect_and_embed(cls, image_path: Path, confidence: float = 0.70) -> List[Dict[str, Any]]:
+    def detect_and_embed(cls, image_path: Path, confidence: float = 0.60) -> List[Dict[str, Any]]:
         """
         Analyze frame with YuNet face detector, crop face bounding box,
         and generate 128-dimensional normalized facial embedding.
@@ -751,8 +892,9 @@ class LocalFaceEngine:
             with Image.open(image_path) as img:
                 img_rgb = img.convert("RGB")
                 img_w, img_h = img_rgb.size
+                model_path = get_face_model_path()
 
-                if cv2 is not None and _MODEL_PATH.exists():
+                if cv2 is not None and model_path.exists():
                     arr_rgb = np.array(img_rgb, dtype=np.uint8)
                     img_bgr = cv2.cvtColor(arr_rgb, cv2.COLOR_RGB2BGR)
 
@@ -935,22 +1077,23 @@ def process_video_faces(
                         with Image.open(fpath) as img:
                             ymin, xmin, ymax, xmax = res["box"]
                             crop = img.crop((xmin, ymin, xmax, ymax)) if xmax > xmin and ymax > ymin else img
-                            face_registry.register_or_update(
+                            pid, assigned_name = face_registry.register_or_update(
                                 embedding=LocalFaceEngine._compute_embedding(crop),
                                 crop_image=crop,
                                 video_path=str(video_path.resolve()),
                                 assigned_name=name,
                                 threshold=cfg.face_match_threshold
                             )
+                            if name not in recognized_people:
+                                recognized_people[name] = {
+                                    "name": name,
+                                    "person_id": pid,
+                                    "id": pid,
+                                    "timecode": timecode,
+                                    "confidence": res.get("similarity", 1.0)
+                                }
                     except Exception:
                         pass
-
-                    if name not in recognized_people:
-                        recognized_people[name] = {
-                            "name": name,
-                            "timecode": timecode,
-                            "confidence": res.get("similarity", 1.0)
-                        }
 
         # Strategy 2: Local Built-in Face Engine (Default or Fallback)
         else:
@@ -971,6 +1114,7 @@ def process_video_faces(
                     recognized_people[name] = {
                         "name": name,
                         "person_id": pid,
+                        "id": pid,
                         "timecode": timecode,
                         "confidence": det.get("confidence", 0.85)
                     }

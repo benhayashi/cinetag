@@ -32,6 +32,7 @@ bin/*
 
 # Pretrained local AI models / Face embeddings
 models/*.onnx
+!models/face_detection_yunet.onnx
 models/*.bin
 models/weights/
 

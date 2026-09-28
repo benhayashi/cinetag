@@ -350,7 +350,7 @@ class QueueManager:
                     detected_faces = process_video_faces(frames, cfg, video_path)
                     if detected_faces:
                         from src.media.faces import face_registry
-                        detected_pids = [f["id"] for f in detected_faces if "id" in f]
+                        detected_pids = [f.get("person_id") or f.get("id") for f in detected_faces if (f.get("person_id") or f.get("id"))]
                         guessed = face_registry.correlate_and_guess_names(
                             detected_face_ids=detected_pids,
                             ai_people_names=analysis.people_or_subjects,
@@ -360,7 +360,7 @@ class QueueManager:
                         for g in guessed:
                             self.log(f"🤖 AI Face Match: Inferred identity for {g['old_name']} -> {g['new_name']}", task_id=task.id)
                             for f in detected_faces:
-                                if f.get("id") == g["person_id"]:
+                                if f.get("person_id") == g["person_id"] or f.get("id") == g["person_id"]:
                                     f["name"] = g["new_name"]
                             if g["old_name"] in analysis.people_or_subjects:
                                 analysis.people_or_subjects = [g["new_name"] if p == g["old_name"] else p for p in analysis.people_or_subjects]
@@ -373,13 +373,15 @@ class QueueManager:
                         self.log(f"Identified {len(detected_faces)} person(s): {names_str}", task_id=task.id)
 
                     # Ensure people/subjects detected from analysis are registered in internal face database
-                    first_frame_path = Path(frames[0].path if hasattr(frames[0], "path") else frames[0]["path"]) if frames else None
+                    all_frame_paths = [Path(f.path if hasattr(f, "path") else f["path"]) for f in frames if (hasattr(f, "path") or "path" in f)]
+                    first_frame_path = all_frame_paths[0] if all_frame_paths else None
                     from src.media.faces import face_registry
                     for subj in analysis.people_or_subjects:
                         face_registry.register_named_subject(
                             name=subj,
                             video_path=str(video_path.resolve()),
-                            frame_path=first_frame_path
+                            frame_path=first_frame_path,
+                            candidate_frames=all_frame_paths
                         )
                 except Exception as fe:
                     self.log(f"Facial recognition note: {fe}", level="warning", task_id=task.id)

@@ -2611,6 +2611,33 @@ function initFacesTab() {
   const btnRefresh = document.getElementById("btn-refresh-faces");
   if (btnRefresh) btnRefresh.addEventListener("click", loadFaces);
 
+  const btnBackfillThumbs = document.getElementById("btn-backfill-face-thumbs");
+  if (btnBackfillThumbs) {
+    btnBackfillThumbs.addEventListener("click", async () => {
+      btnBackfillThumbs.disabled = true;
+      btnBackfillThumbs.textContent = "Scanning videos...";
+      try {
+        const res = await fetch("/api/faces/backfill-thumbnails", { method: "POST" });
+        const data = await res.json();
+        if (data.status === "ok") {
+          if (data.backfilled_count > 0) {
+            alert(`✅ Generated photos for ${data.backfilled_count} person(s) from processed videos!`);
+          } else {
+            alert("All recognized people already have pictures, or associated videos could not be accessed.");
+          }
+          loadFaces();
+        } else {
+          alert("Photo generation error: " + (data.detail || "Unknown error"));
+        }
+      } catch (err) {
+        alert("Photo generation error: " + err.message);
+      } finally {
+        btnBackfillThumbs.disabled = false;
+        btnBackfillThumbs.textContent = "📸 Fill Missing Photos";
+      }
+    });
+  }
+
   const btnAutoGuess = document.getElementById("btn-auto-guess-faces");
   if (btnAutoGuess) {
     btnAutoGuess.addEventListener("click", async () => {
