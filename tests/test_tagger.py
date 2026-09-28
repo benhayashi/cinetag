@@ -1,7 +1,12 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from src.media.tagger import apply_metadata_tags, apply_exiftool_tags
+from src.media.tagger import (
+    apply_metadata_tags,
+    apply_exiftool_tags,
+    safe_copy_file,
+    safe_replace_file,
+)
 
 def test_apply_exiftool_tags(tmp_path):
     mp4_file = tmp_path / "sample.mp4"
@@ -124,4 +129,31 @@ def test_apply_metadata_tags_retries_with_3gp_on_codec_error(tmp_path):
         assert "-f" not in calls[0]
         assert "-f" in calls[1]
         assert "3gp" in calls[1]
+
+
+def test_safe_copy_file_fallback_on_oserror(tmp_path):
+    src = tmp_path / "source.txt"
+    dst = tmp_path / "dest.txt"
+    src.write_text("hello world")
+
+    with patch("shutil.copy2", side_effect=OSError(95, "Operation not supported")) as mock_copy2, \
+         patch("shutil.copyfile", wraps=safe_copy_file.__globals__["shutil"].copyfile) as mock_copyfile:
+        safe_copy_file(src, dst)
+        assert mock_copy2.called
+        assert mock_copyfile.called
+        assert dst.read_text() == "hello world"
+
+
+def test_safe_replace_file_fallback_on_oserror(tmp_path):
+    src = tmp_path / "temp.txt"
+    dst = tmp_path / "target.txt"
+    src.write_text("new content")
+    dst.write_text("old content")
+
+    with patch("os.replace", side_effect=OSError(95, "Operation not supported")) as mock_replace:
+        safe_replace_file(src, dst)
+        assert mock_replace.called
+        assert not src.exists()
+        assert dst.read_text() == "new content"
+
 

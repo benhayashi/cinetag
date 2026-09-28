@@ -17,6 +17,32 @@ class MetadataIntegrityError(Exception):
 
 SUPPORTED_EXIFTOOL_EXTENSIONS = {".mp4", ".m4v", ".mov", ".qt", ".3gp", ".avi", ".wmv"}
 
+def safe_copy_file(src: Path, dst: Path):
+    """
+    Safely copy a file across local and network/FUSE filesystems (SMB/CIFS/NFS).
+    Tries shutil.copy2 first, falling back to shutil.copyfile (pure stream copy)
+    if extended attributes, timestamps, or permissions raise OSError (e.g. Errno 95 Operation not supported).
+    """
+    try:
+        shutil.copy2(src, dst)
+    except OSError:
+        shutil.copyfile(src, dst)
+
+def safe_replace_file(src: Path, dst: Path):
+    """
+    Safely replace dst with src.
+    Tries atomic os.replace first, falling back to copyfile + unlink if the
+    filesystem (such as FUSE, GVFS, or network SMB mounts) does not support atomic os.replace.
+    """
+    try:
+        os.replace(src, dst)
+    except OSError:
+        shutil.copyfile(src, dst)
+        try:
+            src.unlink()
+        except Exception:
+            pass
+
 def apply_exiftool_tags(
     video_path: Path,
     tags: Dict[str, str],
@@ -237,10 +263,10 @@ def apply_metadata_tags(
             while backup_path.exists():
                 backup_path = video_path.with_name(f"{video_path.name}.bak{counter}")
                 counter += 1
-            shutil.copy2(video_path, backup_path)
+            safe_copy_file(video_path, backup_path)
 
         # Step 4: Atomic Replace
-        os.replace(temp_path, video_path)
+        safe_replace_file(temp_path, video_path)
 
         # Step 5: Extended Windows & Apple metadata embedding via ExifTool
         apply_exiftool_tags(video_path, tags)
