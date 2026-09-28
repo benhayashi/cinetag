@@ -259,6 +259,19 @@ def test_api_queue_add_with_date_override(tmp_path):
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
 
+def test_api_results_without_info_json(tmp_path):
+    vid = tmp_path / "clip_no_json.mp4"
+    vid.write_bytes(b"dummy video")
+
+    res = client.get(f"/api/results?file_path={vid.resolve()}")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ok"
+    assert data["filename"] == "clip_no_json.mp4"
+    assert data["tags"] == []
+    assert data["tags_string"] == ""
+
+
 
 
 

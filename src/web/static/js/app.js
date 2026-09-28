@@ -2446,8 +2446,17 @@ async function openResultsModal(filePath) {
   try {
     const res = await fetch(`/api/results?file_path=${encodeURIComponent(filePath)}`);
     if (!res.ok) {
-      const err = await res.json();
-      alert(`Could not fetch analysis results: ${err.detail || res.statusText}`);
+      let errDetail = `${res.status} ${res.statusText}`;
+      try {
+        const err = await res.json();
+        errDetail = err.detail || errDetail;
+      } catch (_) {
+        try {
+          const rawText = await res.text();
+          if (rawText) errDetail = rawText;
+        } catch (_) {}
+      }
+      alert(`Could not fetch analysis results: ${errDetail}`);
       return;
     }
     const data = await res.json();

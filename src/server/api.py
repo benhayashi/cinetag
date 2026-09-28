@@ -1527,6 +1527,20 @@ def get_video_results(file_path: str):
             p = upload_cand
 
     if not p.exists():
+        # Check if file was renamed by queue manager task
+        task_match = next(
+            (t for t in manager.queue if t.file_path == str(p.resolve()) or (t.result and t.result.get("final_file_path") == str(p.resolve()))),
+            None
+        )
+        if task_match:
+            if task_match.result and task_match.result.get("final_file_path"):
+                cand = Path(task_match.result["final_file_path"])
+                if cand.exists():
+                    p = cand
+            elif Path(task_match.file_path).exists():
+                p = Path(task_match.file_path)
+
+    if not p.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
     parent = p.parent
@@ -1560,6 +1574,7 @@ def get_video_results(file_path: str):
     title = ""
     summary = ""
     events = []
+    tags = []
     people = []
     animals_or_pets = []
     objects = []
@@ -1569,6 +1584,7 @@ def get_video_results(file_path: str):
     model = ""
     processed_at = None
     creation_time = None
+    jdata = {}
 
     # 1. Parse .info.json if available
     if json_p:
