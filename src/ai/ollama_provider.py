@@ -45,7 +45,8 @@ class OllamaVisionProvider(BaseVisionProvider):
         context_prompt: Optional[str] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        prompt_guidance: Optional[str] = None
+        prompt_guidance: Optional[str] = None,
+        timeout_seconds: Optional[int] = None
     ) -> VideoAnalysisResult:
         chosen_model = model or self.default_model
         timestamps = [f.timecode for f in frames]
@@ -77,8 +78,9 @@ class OllamaVisionProvider(BaseVisionProvider):
             "format": "json"
         }
 
-        # Generous timeout for local vision models (can take 20-60s on complex batches)
-        timeout = httpx.Timeout(180.0, connect=10.0)
+        # Configurable generous timeout for local vision models (default 600s = 10 min for large 27B+ models)
+        timeout_val = float(timeout_seconds if timeout_seconds is not None else 600.0)
+        timeout = httpx.Timeout(timeout_val, connect=15.0)
         try:
             with httpx.Client(timeout=timeout) as client:
                 res = client.post(f"{self.base_url}/api/chat", json=payload)

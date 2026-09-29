@@ -132,3 +132,34 @@ def test_queue_manager_guidance_composition(tmp_path):
     assert "Always note room lighting" in combined
     assert "kids soccer match" in combined
     assert "Spot jersey #7" in combined
+
+
+def test_ai_timeout_configuration_and_ollama_timeout():
+    from src.ai.ollama_provider import OllamaVisionProvider
+    from src.ai.base import FrameItem
+
+    cfg = AppConfig(ai_timeout_seconds=900)
+    assert cfg.ai_timeout_seconds == 900
+
+    provider = OllamaVisionProvider(base_url="http://localhost:11434")
+
+    with patch("httpx.Client") as mock_client_cls:
+        mock_instance = MagicMock()
+        mock_client_cls.return_value.__enter__.return_value = mock_instance
+        mock_res = MagicMock()
+        mock_res.json.return_value = {
+            "message": {
+                "content": '{"title": "Test", "summary": "Sum", "events": [], "tags": [], "people_or_subjects": [], "animals_or_pets": [], "objects": [], "suggested_filename": "test"}'
+            }
+        }
+        mock_instance.post.return_value = mock_res
+
+        # Call with explicit 600s
+        provider.describe_video(
+            frames=[],
+            timeout_seconds=600
+        )
+
+        called_timeout = mock_client_cls.call_args[1]["timeout"]
+        assert called_timeout.read == 600.0
+

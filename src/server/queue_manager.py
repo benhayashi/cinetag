@@ -343,6 +343,7 @@ class QueueManager:
                     short_note = short_note[:57] + "..."
                 self.log(f"Applying AI guidance focus: \"{short_note}\"", task_id=task.id)
 
+            timeout_sec = getattr(cfg, "ai_timeout_seconds", 600)
             analysis: VideoAnalysisResult
             if cfg.vision_provider == "ollama":
                 provider = OllamaVisionProvider(
@@ -354,7 +355,8 @@ class QueueManager:
                     audio_transcript=transcript,
                     context_prompt=extra_ctx,
                     system_prompt=cfg.custom_system_prompt,
-                    prompt_guidance=combined_guidance
+                    prompt_guidance=combined_guidance,
+                    timeout_seconds=timeout_sec
                 )
             elif cfg.vision_provider == "openai_compatible":
                 provider = OpenAICompatibleVisionProvider(
@@ -367,7 +369,8 @@ class QueueManager:
                     audio_transcript=transcript,
                     context_prompt=extra_ctx,
                     system_prompt=cfg.custom_system_prompt,
-                    prompt_guidance=combined_guidance
+                    prompt_guidance=combined_guidance,
+                    timeout_seconds=timeout_sec
                 )
             elif cfg.vision_provider == "cloud":
                 provider = CloudVisionProvider(
@@ -379,7 +382,8 @@ class QueueManager:
                     audio_transcript=transcript,
                     context_prompt=extra_ctx,
                     system_prompt=cfg.custom_system_prompt,
-                    prompt_guidance=combined_guidance
+                    prompt_guidance=combined_guidance,
+                    timeout_seconds=timeout_sec
                 )
             else:
                 raise ValueError(f"Unknown vision provider: {cfg.vision_provider}")

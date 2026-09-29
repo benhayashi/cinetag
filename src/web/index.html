@@ -672,6 +672,20 @@
                 <label for="cfg-cloud-key">API Key</label>
                 <input type="password" id="cfg-cloud-key" class="form-control" placeholder="sk-...">
               </div>
+            <!-- VLM Request Timeout Setting -->
+            <div class="form-group mt-3" style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem;">
+              <div class="flex-between align-center">
+                <label for="cfg-ai-timeout" style="font-weight: 600; color: var(--text-main);">
+                  ⏱️ Vision Model Request Timeout
+                </label>
+                <div style="display: flex; gap: 0.4rem; align-items: center;">
+                  <input type="number" id="cfg-ai-timeout" class="form-control" style="width: 110px; text-align: right;" value="600" min="60" max="3600" step="30">
+                  <span style="font-size: 0.85rem; color: var(--text-muted);">sec</span>
+                </div>
+              </div>
+              <small class="helper-text mt-1" style="display: block; font-size: 0.78rem; line-height: 1.4;">
+                Maximum time allowed for a single vision inference request (Default: <b>600s = 10 minutes</b>). Prevents premature <code>500 Server Error</code> cutoffs on large models (e.g. 14B, 27B, 32B) or videos with dense visual token contexts.
+              </small>
             </div>
           </div>
 

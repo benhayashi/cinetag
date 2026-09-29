@@ -1373,6 +1373,9 @@ async function loadConfig() {
     const customSystemPromptEl = document.getElementById("cfg-custom-system-prompt");
     if (customSystemPromptEl) customSystemPromptEl.value = cfg.custom_system_prompt || "";
 
+    const aiTimeoutEl = document.getElementById("cfg-ai-timeout");
+    if (aiTimeoutEl) aiTimeoutEl.value = cfg.ai_timeout_seconds || 600;
+
     const queueGuidanceEl = document.getElementById("queue-prompt-guidance");
     if (queueGuidanceEl && !queueGuidanceEl.value) {
       queueGuidanceEl.value = cfg.batch_prompt_guidance || "";
@@ -1637,6 +1640,7 @@ function initSettings() {
       sampling_strategy: document.getElementById("cfg-sampling-strategy")?.value || "interval",
       sampling_interval_seconds: parseInt(document.getElementById("cfg-sampling-interval")?.value || "60", 10),
       max_frames_per_video: parseInt(document.getElementById("cfg-max-frames")?.value || "30", 10),
+      ai_timeout_seconds: parseInt(document.getElementById("cfg-ai-timeout")?.value || "600", 10),
       default_prompt_guidance: document.getElementById("cfg-default-prompt-guidance")?.value.trim() || "",
       custom_system_prompt: document.getElementById("cfg-custom-system-prompt")?.value.trim() || "",
       batch_prompt_guidance: document.getElementById("queue-prompt-guidance")?.value.trim() || ""

@@ -37,18 +37,19 @@ class CloudVisionProvider(BaseVisionProvider):
         context_prompt: Optional[str] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        prompt_guidance: Optional[str] = None
+        prompt_guidance: Optional[str] = None,
+        timeout_seconds: Optional[int] = None
     ) -> VideoAnalysisResult:
         if self.provider == "gemini":
-            return self._call_gemini(frames, audio_transcript, context_prompt, model or "gemini-2.5-flash", system_prompt, prompt_guidance)
+            return self._call_gemini(frames, audio_transcript, context_prompt, model or "gemini-2.5-flash", system_prompt, prompt_guidance, timeout_seconds=timeout_seconds)
         elif self.provider == "anthropic":
-            return self._call_anthropic(frames, audio_transcript, context_prompt, model or "claude-3-5-sonnet-20241022", system_prompt, prompt_guidance)
+            return self._call_anthropic(frames, audio_transcript, context_prompt, model or "claude-3-5-sonnet-20241022", system_prompt, prompt_guidance, timeout_seconds=timeout_seconds)
         elif self.provider == "openai":
-            return self._call_openai(frames, audio_transcript, context_prompt, model or "gpt-4o-mini", system_prompt, prompt_guidance)
+            return self._call_openai(frames, audio_transcript, context_prompt, model or "gpt-4o-mini", system_prompt, prompt_guidance, timeout_seconds=timeout_seconds)
         else:
             raise ValueError(f"Unsupported cloud provider: {self.provider}")
 
-    def _call_gemini(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None):
+    def _call_gemini(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, timeout_seconds=None):
         api_key = self.api_keys.get("gemini")
         if not api_key:
             raise ValueError("Gemini API key is missing.")
@@ -71,8 +72,9 @@ class CloudVisionProvider(BaseVisionProvider):
                     })
         parts.append({"text": f"{active_system_prompt}\n\n{user_text}"})
 
+        timeout_val = float(timeout_seconds if timeout_seconds is not None else 300.0)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=timeout_val) as client:
             res = client.post(url, json={"contents": [{"parts": parts}]})
             res.raise_for_status()
             data = res.json()
@@ -83,7 +85,7 @@ class CloudVisionProvider(BaseVisionProvider):
             res_obj.audio_transcript = audio_transcript
             return res_obj
 
-    def _call_anthropic(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None):
+    def _call_anthropic(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, timeout_seconds=None):
         api_key = self.api_keys.get("anthropic")
         if not api_key:
             raise ValueError("Anthropic API key is missing.")
@@ -119,7 +121,8 @@ class CloudVisionProvider(BaseVisionProvider):
             "system": active_system_prompt,
             "messages": [{"role": "user", "content": content}]
         }
-        with httpx.Client(timeout=120.0) as client:
+        timeout_val = float(timeout_seconds if timeout_seconds is not None else 300.0)
+        with httpx.Client(timeout=timeout_val) as client:
             res = client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
             res.raise_for_status()
             raw_text = res.json()["content"][0]["text"]
@@ -129,7 +132,7 @@ class CloudVisionProvider(BaseVisionProvider):
             res_obj.audio_transcript = audio_transcript
             return res_obj
 
-    def _call_openai(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None):
+    def _call_openai(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, timeout_seconds=None):
         api_key = self.api_keys.get("openai")
         if not api_key:
             raise ValueError("OpenAI API key is missing.")
@@ -146,7 +149,8 @@ class CloudVisionProvider(BaseVisionProvider):
             context_prompt,
             model=model,
             system_prompt=system_prompt,
-            prompt_guidance=prompt_guidance
+            prompt_guidance=prompt_guidance,
+            timeout_seconds=timeout_seconds
         )
         res_obj.provider_name = "openai"
         return res_obj

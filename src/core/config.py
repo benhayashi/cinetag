@@ -30,6 +30,7 @@ class AppConfig(BaseModel):
     })
 
     # AI Prompt Guidance & Description Tuning
+    ai_timeout_seconds: int = Field(default=600, description="HTTP request timeout in seconds for VLM inference (e.g. 600s = 10 minutes for large 27B+ models).")
     custom_system_prompt: Optional[str] = Field(default=None, description="Custom system prompt override (None uses default)")
     default_prompt_guidance: str = Field(default="", description="Permanent guidance addendum included in all video descriptions (e.g. key family names, locations, tone)")
     batch_prompt_guidance: str = Field(default="", description="Active batch guidance prompt for current queue processing")
