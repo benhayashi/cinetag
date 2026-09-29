@@ -17,6 +17,7 @@ class AppConfig(BaseModel):
     vision_provider: str = Field(default="ollama", description="ollama | openai_compatible | cloud")
     ollama_url: str = Field(default="http://localhost:11434")
     ollama_model: str = Field(default="llama3.2-vision")
+    ollama_num_ctx: int = Field(default=16384, description="Context window size (num_ctx) in tokens for Ollama (e.g. 8192, 16384, 32768, 65536, or 0 for auto). Default 16384 prevents context overflow on multimodal video analysis.")
     
     openai_compatible_url: str = Field(default="http://localhost:1234/v1")
     openai_compatible_api_key: str = Field(default="lm-studio")

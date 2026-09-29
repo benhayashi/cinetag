@@ -346,9 +346,11 @@ class QueueManager:
             timeout_sec = getattr(cfg, "ai_timeout_seconds", 600)
             analysis: VideoAnalysisResult
             if cfg.vision_provider == "ollama":
+                ollama_ctx = getattr(cfg, "ollama_num_ctx", 16384)
                 provider = OllamaVisionProvider(
                     base_url=cfg.ollama_url,
-                    default_model=cfg.ollama_model
+                    default_model=cfg.ollama_model,
+                    default_num_ctx=ollama_ctx
                 )
                 analysis = provider.describe_video(
                     frames,
@@ -356,7 +358,8 @@ class QueueManager:
                     context_prompt=extra_ctx,
                     system_prompt=cfg.custom_system_prompt,
                     prompt_guidance=combined_guidance,
-                    timeout_seconds=timeout_sec
+                    timeout_seconds=timeout_sec,
+                    num_ctx=ollama_ctx
                 )
             elif cfg.vision_provider == "openai_compatible":
                 provider = OpenAICompatibleVisionProvider(

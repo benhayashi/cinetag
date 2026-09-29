@@ -48,7 +48,9 @@ class BaseVisionProvider(ABC):
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
         prompt_guidance: Optional[str] = None,
-        timeout_seconds: Optional[int] = None
+        timeout_seconds: Optional[int] = None,
+        num_ctx: Optional[int] = None,
+        **kwargs
     ) -> VideoAnalysisResult:
         """Analyze sampled video frames and optional audio transcript."""
         pass

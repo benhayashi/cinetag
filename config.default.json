@@ -4,6 +4,7 @@
   "vision_provider": "ollama",
   "ollama_url": "http://localhost:11434",
   "ollama_model": "llama3.2-vision",
+  "ollama_num_ctx": 16384,
   "openai_compatible_url": "http://localhost:1234/v1",
   "openai_compatible_api_key": "lm-studio",
   "openai_compatible_model": "local-model",

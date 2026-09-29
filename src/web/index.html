@@ -640,6 +640,22 @@
                   <button id="btn-test-ollama" class="btn btn-secondary">Test & Refresh Models</button>
                 </div>
               </div>
+              <div class="form-group">
+                <label for="cfg-ollama-num-ctx">Context Window Size (<code>num_ctx</code>)</label>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                  <input type="number" id="cfg-ollama-num-ctx" class="form-control" list="ollama-num-ctx-list" value="16384" min="0" max="131072" step="1024" style="max-width: 220px;">
+                  <span class="text-muted" style="font-size: 0.85rem;">tokens (0 = Auto)</span>
+                </div>
+                <datalist id="ollama-num-ctx-list">
+                  <option value="0">Auto / Smart Dynamic</option>
+                  <option value="4096">4,096 tokens (Ollama default)</option>
+                  <option value="8192">8,192 tokens</option>
+                  <option value="16384">16,384 tokens (Recommended)</option>
+                  <option value="32768">32,768 tokens (High VRAM)</option>
+                  <option value="65536">65,536 tokens</option>
+                </datalist>
+                <small class="helper-text">Context token window allocated by Ollama. Default: <b>16,384 tokens</b> (prevents <code>request exceeds available context size</code> 400 errors when analyzing multiple video frames). CineTag also automatically scales context up and retries if a video exceeds the limit.</small>
+              </div>
             </div>
 
             <!-- LM Studio / OpenAI-Compatible Section -->

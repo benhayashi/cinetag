@@ -1220,6 +1220,10 @@ async function loadConfig() {
       }
       ollamaModelSel.value = currentVal;
     }
+    const ollamaNumCtxEl = document.getElementById("cfg-ollama-num-ctx");
+    if (ollamaNumCtxEl) {
+      ollamaNumCtxEl.value = cfg.ollama_num_ctx !== undefined ? cfg.ollama_num_ctx : 16384;
+    }
     
     document.getElementById("cfg-openai-url").value = cfg.openai_compatible_url || "http://localhost:1234/v1";
     document.getElementById("cfg-openai-model").value = cfg.openai_compatible_model || "local-model";
@@ -1598,6 +1602,7 @@ function initSettings() {
       vision_provider: visionProv,
       ollama_url: document.getElementById("cfg-ollama-url").value.trim(),
       ollama_model: document.getElementById("cfg-ollama-model").value,
+      ollama_num_ctx: parseInt(document.getElementById("cfg-ollama-num-ctx")?.value || "16384", 10),
       openai_compatible_url: document.getElementById("cfg-openai-url").value.trim(),
       openai_compatible_model: document.getElementById("cfg-openai-model").value.trim(),
       cloud_provider: cloudProv,
