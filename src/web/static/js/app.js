@@ -1343,8 +1343,14 @@ async function loadConfig() {
     }
     const autoTagEl = document.getElementById("cfg-auto-tag");
     if (autoTagEl) autoTagEl.checked = !!cfg.enable_in_file_tagging;
+    const enableTagEl = document.getElementById("cfg-enable-tagging");
+    if (enableTagEl) enableTagEl.checked = !!cfg.enable_in_file_tagging;
     const backupTagEl = document.getElementById("cfg-backup-before-tagging");
     if (backupTagEl) backupTagEl.checked = cfg.backup_before_tagging !== false;
+    const flushBackupEl = document.getElementById("cfg-flush-backup-on-success");
+    if (flushBackupEl) flushBackupEl.checked = cfg.flush_backup_on_success !== false;
+    const flushBackupQuickEl = document.getElementById("cfg-flush-backup-quick");
+    if (flushBackupQuickEl) flushBackupQuickEl.checked = cfg.flush_backup_on_success !== false;
     const verifyTagEl = document.getElementById("cfg-verify-tag-integrity");
     if (verifyTagEl) verifyTagEl.checked = cfg.verify_integrity !== false;
     const schemeEl = document.getElementById("cfg-rename-scheme");
@@ -1618,6 +1624,7 @@ function initSettings() {
       export_edl: document.getElementById("cfg-export-edl")?.checked ?? false,
       enable_in_file_tagging: document.getElementById("cfg-auto-tag")?.checked || document.getElementById("cfg-enable-tagging")?.checked || false,
       backup_before_tagging: document.getElementById("cfg-backup-before-tagging")?.checked ?? true,
+      flush_backup_on_success: (document.getElementById("cfg-flush-backup-on-success")?.checked ?? document.getElementById("cfg-flush-backup-quick")?.checked ?? true),
       verify_integrity: document.getElementById("cfg-verify-tag-integrity")?.checked ?? true,
       auto_rename: document.getElementById("cfg-auto-rename")?.checked || false,
       rename_scheme: document.getElementById("cfg-rename-scheme")?.value || "date_title",
@@ -1935,10 +1942,12 @@ function initSettings() {
     });
   }
 
-  // In-file tagging checkbox in Organizer tab syncs with config
+  // In-file tagging checkbox in Organizer tab syncs with config & settings
   const enableTaggingEl = document.getElementById("cfg-enable-tagging");
+  const autoTagEl = document.getElementById("cfg-auto-tag");
   if (enableTaggingEl) {
     enableTaggingEl.addEventListener("change", async (e) => {
+      if (autoTagEl) autoTagEl.checked = e.target.checked;
       await fetch("/api/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1946,6 +1955,73 @@ function initSettings() {
       });
     });
   }
+  if (autoTagEl) {
+    autoTagEl.addEventListener("change", async (e) => {
+      if (enableTaggingEl) enableTaggingEl.checked = e.target.checked;
+      await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enable_in_file_tagging: e.target.checked })
+      });
+    });
+  }
+
+  // Backup flush sync between Organizer tab and Settings tab
+  const flushSuccessEl = document.getElementById("cfg-flush-backup-on-success");
+  const flushQuickEl = document.getElementById("cfg-flush-backup-quick");
+  if (flushSuccessEl) {
+    flushSuccessEl.addEventListener("change", (e) => {
+      if (flushQuickEl) flushQuickEl.checked = e.target.checked;
+    });
+  }
+  if (flushQuickEl) {
+    flushQuickEl.addEventListener("change", (e) => {
+      if (flushSuccessEl) flushSuccessEl.checked = e.target.checked;
+    });
+  }
+
+  // Purge / flush leftover .bak files
+  const handleFlushBackups = async (statusElId) => {
+    const statusEl = statusElId ? document.getElementById(statusElId) : null;
+    if (statusEl) {
+      statusEl.textContent = "Scanning for .bak files...";
+      statusEl.style.color = "var(--text-muted)";
+    }
+    try {
+      const res = await fetch("/api/storage/flush-backups", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        const msg = data.flushed_count > 0
+          ? `Flushed ${data.flushed_count} leftover .bak file(s)`
+          : "No orphaned .bak files found (clean)";
+        if (statusEl) {
+          statusEl.textContent = msg;
+          statusEl.style.color = "#34d399";
+          setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 4000);
+        }
+        if (typeof showToast === "function") showToast(msg);
+      } else {
+        if (statusEl) {
+          statusEl.textContent = "Flush failed";
+          statusEl.style.color = "#f87171";
+        }
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = "Error flushing backups";
+        statusEl.style.color = "#f87171";
+      }
+    }
+  };
+
+  const btnFlushLog = document.getElementById("btn-flush-backups-log");
+  if (btnFlushLog) btnFlushLog.addEventListener("click", () => handleFlushBackups(null));
+
+  const btnFlushQuick = document.getElementById("btn-flush-backups-quick");
+  if (btnFlushQuick) btnFlushQuick.addEventListener("click", () => handleFlushBackups("flush-backups-status-quick"));
+
+  const btnFlushSettings = document.getElementById("btn-flush-backups");
+  if (btnFlushSettings) btnFlushSettings.addEventListener("click", () => handleFlushBackups("flush-backups-status"));
 
   // Auto-rename sync between settings and batch header toggle
   const cfgAutoRename = document.getElementById("cfg-auto-rename");

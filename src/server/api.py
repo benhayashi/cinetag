@@ -25,7 +25,7 @@ from src.core.privacy import (
 )
 from src.media.probe import SUPPORTED_EXTENSIONS, is_video_file, probe_video
 from src.media.renamer import generate_suggested_name, execute_rename, undo_last_rename
-from src.media.tagger import apply_metadata_tags
+from src.media.tagger import apply_metadata_tags, flush_orphaned_backups
 from src.media.ffmpeg_installer import check_ffmpeg_status, install_standalone_ffmpeg, get_binary_info
 from src.media.faces import face_registry
 from src.ai.ollama_provider import OllamaVisionProvider
@@ -91,6 +91,7 @@ class TagRequest(BaseModel):
     date: Optional[str] = None
     keywords: Optional[str] = None
     create_backup: bool = True
+    flush_backup: bool = True
     verify_integrity: bool = True
 
 class RenamePersonRequest(BaseModel):
@@ -270,6 +271,36 @@ def clear_queue():
 def clear_completed_queue():
     removed = manager.clear_completed()
     return {"status": "ok", "cleared_count": removed}
+
+class FlushBackupsRequest(BaseModel):
+    path: Optional[str] = None
+
+@router.post("/storage/flush-backups")
+def flush_backups_endpoint(req: Optional[FlushBackupsRequest] = None):
+    """
+    Purge leftover .bak backup files from the specified folder,
+    or across all queued items, upload cache, and known directories.
+    """
+    flushed_count = 0
+    target_path = req.path if req and req.path else None
+    if target_path and target_path.strip():
+        p = Path(target_path.strip())
+        if p.exists():
+            flushed_count += flush_orphaned_backups(p)
+    else:
+        # Check all items in current queue
+        with manager._lock:
+            for task in manager.queue:
+                try:
+                    flushed_count += flush_orphaned_backups(Path(task.file_path))
+                except Exception:
+                    pass
+        # Check uploads directory
+        uploads_dir = get_uploads_dir()
+        if uploads_dir.exists():
+            flushed_count += flush_orphaned_backups(uploads_dir)
+
+    return {"status": "success", "flushed_count": flushed_count}
 
 @router.get("/fs/browse")
 def browse_filesystem(path: Optional[str] = None):
@@ -1162,6 +1193,7 @@ def tag_file(req: TagRequest):
             p,
             tags=tags,
             create_backup=req.create_backup,
+            flush_backup=req.flush_backup,
             verify_integrity=req.verify_integrity,
             custom_ffmpeg=cfg.ffmpeg_path
         )

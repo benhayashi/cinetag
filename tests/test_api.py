@@ -272,6 +272,25 @@ def test_api_results_without_info_json(tmp_path):
     assert data["tags_string"] == ""
 
 
+def test_api_flush_backups(tmp_path):
+    vid = tmp_path / "video.mp4"
+    vid.write_bytes(b"data")
+    bak1 = tmp_path / "video.mp4.bak"
+    bak1.write_bytes(b"bak1")
+    bak2 = tmp_path / "video.mp4.bak1"
+    bak2.write_bytes(b"bak2")
+
+    res = client.post("/api/storage/flush-backups", json={"path": str(tmp_path)})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["flushed_count"] == 2
+    assert not bak1.exists()
+    assert not bak2.exists()
+    assert vid.exists()
+
+
+
 
 
 

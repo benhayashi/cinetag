@@ -95,6 +95,7 @@ class AppConfig(BaseModel):
     # In-file Tagging (Safe Mode)
     enable_in_file_tagging: bool = False
     backup_before_tagging: bool = True
+    flush_backup_on_success: bool = Field(default=True, description="Automatically flush/delete the .bak file after successful in-file tagging and stream integrity verification.")
     verify_integrity: bool = True
 
     # Web Server

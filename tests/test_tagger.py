@@ -6,6 +6,8 @@ from src.media.tagger import (
     apply_exiftool_tags,
     safe_copy_file,
     safe_replace_file,
+    flush_orphaned_backups,
+    MetadataIntegrityError,
 )
 
 def test_apply_exiftool_tags(tmp_path):
@@ -155,5 +157,122 @@ def test_safe_replace_file_fallback_on_oserror(tmp_path):
         assert mock_replace.called
         assert not src.exists()
         assert dst.read_text() == "new content"
+
+
+def test_apply_metadata_tags_flushes_backup_on_success(tmp_path):
+    vid = tmp_path / "video.mp4"
+    vid.write_bytes(b"dummy_content" * 100)
+    bak = tmp_path / "video.mp4.bak"
+
+    with patch("src.media.tagger.find_binary", return_value="/usr/bin/ffmpeg"), \
+         patch("src.media.tagger.probe_video", return_value={"duration": 10.0}), \
+         patch("src.media.tagger.apply_exiftool_tags"), \
+         patch("subprocess.run") as mock_run:
+
+        def fake_ffmpeg(cmd, **kwargs):
+            out_p = Path(cmd[-1])
+            out_p.write_bytes(b"dummy_content" * 100)
+            return MagicMock(returncode=0)
+
+        mock_run.side_effect = fake_ffmpeg
+
+        res = apply_metadata_tags(
+            vid,
+            {"title": "Flush Test"},
+            create_backup=True,
+            flush_backup=True,
+            verify_integrity=False
+        )
+
+        assert res["status"] == "success"
+        assert res["backup_flushed"] is True
+        # The temporary .bak must be automatically unlinked upon verified success
+        assert not bak.exists()
+
+
+def test_apply_metadata_tags_retains_backup_when_flush_disabled(tmp_path):
+    vid = tmp_path / "video.mp4"
+    vid.write_bytes(b"dummy_content" * 100)
+    bak = tmp_path / "video.mp4.bak"
+
+    with patch("src.media.tagger.find_binary", return_value="/usr/bin/ffmpeg"), \
+         patch("src.media.tagger.probe_video", return_value={"duration": 10.0}), \
+         patch("src.media.tagger.apply_exiftool_tags"), \
+         patch("subprocess.run") as mock_run:
+
+        def fake_ffmpeg(cmd, **kwargs):
+            out_p = Path(cmd[-1])
+            out_p.write_bytes(b"dummy_content" * 100)
+            return MagicMock(returncode=0)
+
+        mock_run.side_effect = fake_ffmpeg
+
+        res = apply_metadata_tags(
+            vid,
+            {"title": "Retain Test"},
+            create_backup=True,
+            flush_backup=False,
+            verify_integrity=False
+        )
+
+        assert res["status"] == "success"
+        assert res["backup_flushed"] is False
+        assert bak.exists()
+
+
+def test_apply_metadata_tags_retains_backup_on_failure(tmp_path):
+    vid = tmp_path / "video.mp4"
+    vid.write_bytes(b"original_payload_bytes" * 50)
+    bak = tmp_path / "video.mp4.bak"
+
+    with patch("src.media.tagger.find_binary", return_value="/usr/bin/ffmpeg"), \
+         patch("src.media.tagger.probe_video", side_effect=[
+             {"duration": 10.0},  # Original probe
+             {"duration": 1.0}    # New probe -> triggers MetadataIntegrityError duration mismatch
+         ]), \
+         patch("subprocess.run") as mock_run:
+
+        def fake_ffmpeg(cmd, **kwargs):
+            out_p = Path(cmd[-1])
+            out_p.write_bytes(b"corrupted_stream" * 50)
+            return MagicMock(returncode=0)
+
+        mock_run.side_effect = fake_ffmpeg
+
+        with pytest.raises(MetadataIntegrityError):
+            apply_metadata_tags(
+                vid,
+                {"title": "Fail Test"},
+                create_backup=True,
+                flush_backup=True,
+                verify_integrity=True
+            )
+
+        # Since integrity check failed BEFORE replace/flush, original file and backup safety are preserved
+        assert vid.read_bytes() == b"original_payload_bytes" * 50
+
+
+def test_flush_orphaned_backups_file_and_dir(tmp_path):
+    video = tmp_path / "test.mp4"
+    video.write_bytes(b"video")
+    bak1 = tmp_path / "test.mp4.bak"
+    bak1.write_bytes(b"bak1")
+    bak2 = tmp_path / "test.mp4.bak1"
+    bak2.write_bytes(b"bak2")
+    other_bak = tmp_path / "other.mov.bak"
+    other_bak.write_bytes(b"other")
+
+    # Flush for single video file
+    flushed = flush_orphaned_backups(video)
+    assert flushed == 2
+    assert not bak1.exists()
+    assert not bak2.exists()
+    assert other_bak.exists()
+
+    # Flush directory
+    dir_flushed = flush_orphaned_backups(tmp_path)
+    assert dir_flushed == 1
+    assert not other_bak.exists()
+
 
 

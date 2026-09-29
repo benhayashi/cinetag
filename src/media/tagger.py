@@ -43,6 +43,52 @@ def safe_replace_file(src: Path, dst: Path):
         except Exception:
             pass
 
+def flush_orphaned_backups(target: Path) -> int:
+    """
+    Safely delete leftover .bak backup files associated with a video file
+    or all .bak files in a given directory.
+    Returns the count of purged backup files.
+    """
+    count = 0
+    if not target.exists():
+        # Check if target is a video path whose .bak exists
+        cand = target.with_name(f"{target.name}.bak")
+        if cand.exists() and cand.is_file():
+            try:
+                cand.unlink()
+                count += 1
+            except Exception:
+                pass
+        return count
+
+    if target.is_file():
+        parent = target.parent
+        base_name = target.name
+        # Check base_name.bak and base_name.bak1, base_name.bak2, etc.
+        cand = parent / f"{base_name}.bak"
+        if cand.exists() and cand.is_file():
+            try:
+                cand.unlink()
+                count += 1
+            except Exception:
+                pass
+        for extra in parent.glob(f"{base_name}.bak*"):
+            if extra.is_file():
+                try:
+                    extra.unlink()
+                    count += 1
+                except Exception:
+                    pass
+    elif target.is_dir():
+        for f in target.glob("*.bak*"):
+            if f.is_file():
+                try:
+                    f.unlink()
+                    count += 1
+                except Exception:
+                    pass
+    return count
+
 def apply_exiftool_tags(
     video_path: Path,
     tags: Dict[str, str],
@@ -111,6 +157,7 @@ def apply_metadata_tags(
     video_path: Path,
     tags: Dict[str, str],
     create_backup: bool = True,
+    flush_backup: bool = True,
     verify_integrity: bool = True,
     custom_ffmpeg: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -271,10 +318,21 @@ def apply_metadata_tags(
         # Step 5: Extended Windows & Apple metadata embedding via ExifTool
         apply_exiftool_tags(video_path, tags)
 
+        # Step 6: Flush safety backup if verification and replacement succeeded
+        flushed = False
+        if backup_path and backup_path.exists() and flush_backup:
+            try:
+                backup_path.unlink()
+                flushed = True
+                logger.info(f"Successfully flushed temporary safety backup file: {backup_path.name}")
+            except Exception as e:
+                logger.warning(f"Could not remove temporary backup {backup_path.name}: {e}")
+
         return {
             "status": "success",
             "file": str(video_path),
-            "backup_created": str(backup_path) if backup_path else None,
+            "backup_created": str(backup_path) if (backup_path and backup_path.exists()) else None,
+            "backup_flushed": flushed,
             "tags_applied": tags
         }
 

@@ -314,6 +314,7 @@
             <div class="header-btns" style="display:flex; gap:0.5rem;">
               <button id="btn-download-logs-terminal" class="btn btn-sm btn-secondary" title="Download persistent application logs">📥 Download Logs</button>
               <button id="btn-copy-logs" class="btn btn-sm btn-secondary">📋 Copy Logs</button>
+              <button id="btn-flush-backups-log" class="btn btn-sm btn-secondary" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);" title="Scan for and delete any leftover .bak backup files">🧹 Flush .bak</button>
               <button id="btn-clear-logs" class="btn btn-sm btn-secondary">Clear Screen</button>
             </div>
           </div>
@@ -420,22 +421,43 @@
           </div>
         </div>
 
-        <!-- Safe Container Tagging Card -->
+        <!-- Safe Tagging & Direct Rename Choice Card -->
         <div class="card alert-card">
-          <div class="alert-icon">⚠️</div>
+          <div class="alert-icon">⚡</div>
           <div class="alert-body">
-            <h3>In-Container Metadata Tagging (Safe Mode)</h3>
-            <p>Directly writing tags (Title, Description, Date) into MP4/MOV container streams can be risky with broken encoders. CineTag provides an <b>Automated Integrity Check</b>:</p>
-            <ul>
-              <li>Stream copy without re-encoding (preserves 100% video/audio bitrates).</li>
-              <li>Verification gate: compares duration, stream count, and integrity before replacing original.</li>
-              <li>Automated backup creation (<code>.bak</code>) before in-place modification.</li>
-            </ul>
-            <div class="mt-2">
+            <h3>Direct Rename (Zero SSD Writes) vs. In-Container Metadata Tagging</h3>
+            <p>Choose how CineTag manages and organizes your processed video files:</p>
+            
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 0.75rem 1rem; margin-top: 0.5rem; margin-bottom: 0.75rem;">
+              <strong style="color: #34d399;">🚀 Direct Rename Only (Zero Extra SSD Writes & 0% Corruption Risk — Default / Recommended):</strong>
+              <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45;">
+                Renames the video file on disk and updates accompanying sidecars (<code>.txt</code>, <code>.json</code>, <code>.srt</code>, <code>.nfo</code>).
+                <i>Disclaimer:</i> Filesystem renaming updates only the directory table entry / inode pointer without rewriting any video payload bytes. This creates <b>0 extra writes on your SSD</b> and has <b>0% risk of stream corruption</b>.
+              </p>
+            </div>
+
+            <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.75rem;">
+              <strong style="color: #fbbf24;">🏷️ In-File Container Tagging (Optional):</strong>
+              <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45;">
+                Re-muxes the video container via FFmpeg (<code>-c copy</code>) to embed Title, Description, and Keywords directly inside MP4/MOV container atoms and Windows Explorer Xtra tags. Because stream copying writes duplicate stream data to disk, it creates extra writes on your drive and creates a temporary <code>.bak</code> safety backup until stream duration and integrity are verified.
+              </p>
+            </div>
+
+            <div class="mt-2" style="display: flex; flex-direction: column; gap: 0.5rem;">
               <label class="checkbox-label">
                 <input type="checkbox" id="cfg-enable-tagging">
-                <b>Enable in-file metadata tagging during queue runs</b> (Sidecar files are always generated regardless).
+                <b>Enable in-file metadata container tagging</b> (Disabled by default; sidecar files are always generated regardless).
               </label>
+              <div id="tagging-options-panel" style="margin-left: 1.5rem; display: flex; flex-direction: column; gap: 0.35rem;">
+                <label class="checkbox-label" style="font-size: 0.85rem;">
+                  <input type="checkbox" id="cfg-flush-backup-quick" checked>
+                  <span>Flush <code>.bak</code> safety backup automatically after stream integrity passes</span>
+                </label>
+              </div>
+              <div class="mt-2" style="display: flex; gap: 0.5rem; align-items: center;">
+                <button id="btn-flush-backups-quick" class="btn btn-sm btn-secondary" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);" title="Scan for and delete any leftover .bak backup files from previous runs">🧹 Flush Leftover .bak Files</button>
+                <span id="flush-backups-status-quick" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+              </div>
             </div>
           </div>
         </div>
@@ -992,10 +1014,19 @@
 
           <h3>🏷️ Automated Post-Processing Actions</h3>
           <p class="card-desc">Automatically rename files and/or apply container metadata tags directly to videos as each queue task finishes.</p>
+          
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 0.75rem 1rem; margin-top: 0.5rem; margin-bottom: 0.75rem;">
+            <strong style="color: #34d399;">🛡️ SSD Safety & Direct Renaming Disclaimer:</strong>
+            <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45;">
+              Direct renaming (<code>auto_rename</code>) operates instantly at the filesystem directory index level. It does <b>not</b> copy, re-encode, or rewrite any video data, so it creates <b>0 extra writes on your SSD</b> and has <b>0% risk of stream corruption</b>.
+              In-file container tagging re-muxes the container with FFmpeg to embed tags, which writes duplicate stream data to disk.
+            </p>
+          </div>
+
           <div class="checkbox-grid mt-2">
             <label class="checkbox-label">
               <input type="checkbox" id="cfg-auto-rename">
-              <b>Auto-rename files upon completion</b>
+              <b>Auto-rename files upon completion (Zero SSD video writes)</b>
             </label>
             <label class="checkbox-label">
               <input type="checkbox" id="cfg-auto-tag">
@@ -1003,12 +1034,21 @@
             </label>
             <label class="checkbox-label">
               <input type="checkbox" id="cfg-backup-before-tagging" checked>
-              <span>Backup original file before container tagging</span>
+              <span>Backup original file before container tagging (<code>.bak</code>)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-flush-backup-on-success" checked>
+              <span><b>Flush <code>.bak</code> safety file automatically</b> upon verified success</span>
             </label>
             <label class="checkbox-label">
               <input type="checkbox" id="cfg-verify-tag-integrity" checked>
               <span>Verify stream integrity before replacing original</span>
             </label>
+          </div>
+
+          <div class="mt-3" style="display: flex; gap: 0.75rem; align-items: center;">
+            <button id="btn-flush-backups" class="btn btn-secondary btn-sm" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);" title="Scan for and delete any leftover .bak backup files across processed folders">🧹 Flush Leftover .bak Files</button>
+            <span id="flush-backups-status" style="font-size: 0.85rem; color: var(--text-muted);"></span>
           </div>
 
           <hr class="divider">

@@ -12,7 +12,7 @@ from src.core.config import AppConfig, load_config
 from src.core.privacy import cleanup_video_cache, purge_expired_cache
 from src.media.probe import probe_video
 from src.media.sampler import extract_frames, extract_audio
-from src.media.tagger import apply_metadata_tags
+from src.media.tagger import apply_metadata_tags, flush_orphaned_backups
 from src.media.renamer import generate_suggested_name, execute_rename
 from src.ai.base import VideoAnalysisResult
 from src.ai.ollama_provider import OllamaVisionProvider
@@ -129,8 +129,15 @@ class QueueManager:
     def clear_completed(self) -> int:
         with self._lock:
             initial = len(self.queue)
+            completed_tasks = [t for t in self.queue if t.status == "completed"]
             self.queue = [t for t in self.queue if t.status != "completed"]
             removed = initial - len(self.queue)
+            for t in completed_tasks:
+                try:
+                    p = Path(t.file_path)
+                    flush_orphaned_backups(p)
+                except Exception:
+                    pass
             self.log(f"Cleared {removed} completed task(s) from queue.")
             return removed
 
@@ -486,6 +493,7 @@ class QueueManager:
                         video_path,
                         tags=tags,
                         create_backup=cfg.backup_before_tagging,
+                        flush_backup=getattr(cfg, "flush_backup_on_success", True),
                         verify_integrity=cfg.verify_integrity,
                         custom_ffmpeg=cfg.ffmpeg_path
                     )
