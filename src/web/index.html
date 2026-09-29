@@ -200,8 +200,8 @@
           </div>
 
           <!-- Batch AI Focus & Guidance Bar -->
-          <div class="batch-guidance-bar mt-2 p-3" style="background: rgba(30, 41, 59, 0.5); border: 1px solid var(--border-color); border-radius: 8px;">
-            <div class="flex-between align-center mb-1">
+          <div class="batch-guidance-bar">
+            <div class="flex-between align-center mb-1" style="flex-wrap: wrap; gap: 0.5rem;">
               <label for="queue-prompt-guidance" style="font-weight: 600; font-size: 0.85rem; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem;">
                 <span>🎯</span>
                 <span>Batch AI Focus & Guidance Prompt</span>
@@ -216,17 +216,17 @@
                 </button>
               </div>
             </div>
-            <textarea id="queue-prompt-guidance" class="form-control" rows="2" style="font-size: 0.82rem; resize: vertical; min-height: 52px;" placeholder="e.g. Vacation to Banff, Alberta. Look for Lake Louise, hiking trails, mountains, Ben (wearing blue jacket), Sarah. Note wildlife or weather."></textarea>
-            <div class="flex-between align-center mt-2" style="flex-wrap: wrap; gap: 0.4rem;">
-              <div style="display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
+            <textarea id="queue-prompt-guidance" class="form-control" rows="2" style="width: 100%; min-width: 100%; max-width: 100%; box-sizing: border-box; display: block; font-size: 0.85rem; resize: vertical; min-height: 60px;" placeholder="e.g. Vacation to Banff, Alberta. Look for Lake Louise, hiking trails, mountains, Ben (wearing blue jacket), Sarah. Note wildlife or weather."></textarea>
+            <div class="guidance-presets-bar">
+              <div class="guidance-presets-list">
                 <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">Quick Presets:</span>
-                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="trip" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">✈️ Trip / Vacation</button>
-                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="birthday" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">🎂 Birthday / Party</button>
-                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="sports" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">🏀 Sports / Outdoors</button>
-                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="home" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">🏡 Home / Family</button>
-                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="pets" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">🐾 Pets / Animals</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="trip">✈️ Trip / Vacation</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="birthday">🎂 Birthday / Party</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="sports">🏀 Sports / Outdoors</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="home">🏡 Home / Family</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="pets">🐾 Pets / Animals</button>
               </div>
-              <small class="text-muted" style="font-size: 0.72rem;">Instructs VLM on specific people, locations, actions, and details to prioritize.</small>
+              <small class="text-muted" style="font-size: 0.75rem;">Instructs VLM on specific people, locations, actions, and details to prioritize.</small>
             </div>
           </div>
 

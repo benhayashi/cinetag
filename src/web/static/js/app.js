@@ -1069,6 +1069,13 @@ function initQueueControls() {
     pets: "Pets and domestic animals. Focus on pets (dogs, cats, etc.), their breeds/colors, behaviors, playing with toys, tricks, walks, interactions with owners."
   };
 
+  const autoResizeGuidance = (el) => {
+    if (!el) return;
+    el.style.height = "auto";
+    const nextH = Math.max(60, Math.min(el.scrollHeight + 4, 320));
+    el.style.height = nextH + "px";
+  };
+
   document.querySelectorAll(".btn-preset-guidance").forEach(btn => {
     btn.addEventListener("click", () => {
       const presetKey = btn.dataset.preset;
@@ -1080,6 +1087,7 @@ function initQueueControls() {
         } else {
           textarea.value = text;
         }
+        autoResizeGuidance(textarea);
         textarea.dispatchEvent(new Event("change"));
       }
     });
@@ -1091,6 +1099,7 @@ function initQueueControls() {
       const textarea = document.getElementById("queue-prompt-guidance");
       if (textarea) {
         textarea.value = "";
+        autoResizeGuidance(textarea);
         textarea.dispatchEvent(new Event("change"));
       }
     });
@@ -1117,6 +1126,9 @@ function initQueueControls() {
 
   const queueGuidanceEl = document.getElementById("queue-prompt-guidance");
   if (queueGuidanceEl) {
+    autoResizeGuidance(queueGuidanceEl);
+    queueGuidanceEl.addEventListener("input", () => autoResizeGuidance(queueGuidanceEl));
+
     const syncBatchGuidance = async () => {
       try {
         await fetch("/api/queue/prompt-guidance", {
@@ -1358,6 +1370,9 @@ async function loadConfig() {
     const queueGuidanceEl = document.getElementById("queue-prompt-guidance");
     if (queueGuidanceEl && !queueGuidanceEl.value) {
       queueGuidanceEl.value = cfg.batch_prompt_guidance || "";
+    }
+    if (queueGuidanceEl) {
+      queueGuidanceEl.dispatchEvent(new Event("input"));
     }
 
     updateRenameSchemePreview();
