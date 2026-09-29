@@ -1304,9 +1304,9 @@ async function loadConfig() {
     const quickDistEl = document.getElementById("faces-quick-distance");
     const badgeQuickDistEl = document.getElementById("badge-faces-quick-distance");
     if (faceDistEl) faceDistEl.value = distVal;
-    if (badgeDistEl) badgeDistEl.textContent = `Distance: ${Number(distVal).toFixed(2)} (Similarity: ${(1 - Number(distVal)).toFixed(2)})`;
+    if (badgeDistEl) badgeDistEl.textContent = `Distance: ${Number(distVal).toFixed(2)} (Similarity: ${Math.max(0, 1 - Number(distVal)).toFixed(2)})`;
     if (quickDistEl) quickDistEl.value = distVal;
-    if (badgeQuickDistEl) badgeQuickDistEl.textContent = `Distance: ${Number(distVal).toFixed(2)} (Similarity: ${(1 - Number(distVal)).toFixed(2)})`;
+    if (badgeQuickDistEl) badgeQuickDistEl.textContent = `Distance: ${Number(distVal).toFixed(2)} (Similarity: ${Math.max(0, 1 - Number(distVal)).toFixed(2)})`;
     const comprefaceUrlEl = document.getElementById("cfg-compreface-url");
     if (comprefaceUrlEl) comprefaceUrlEl.value = cfg.compreface_url || "http://localhost:8000";
     const comprefaceKeyEl = document.getElementById("cfg-compreface-key");
@@ -1813,7 +1813,7 @@ function initSettings() {
   if (faceDistEl) {
     faceDistEl.addEventListener("input", (e) => {
       const dist = parseFloat(e.target.value);
-      const text = `Distance: ${dist.toFixed(2)} (Similarity: ${(1 - dist).toFixed(2)})`;
+      const text = `Distance: ${dist.toFixed(2)} (Similarity: ${Math.max(0, 1 - dist).toFixed(2)})`;
       if (badgeDistEl) badgeDistEl.textContent = text;
       const quickDist = document.getElementById("faces-quick-distance");
       const badgeQuickDist = document.getElementById("badge-faces-quick-distance");
@@ -2949,7 +2949,7 @@ function initFacesTab() {
   if (quickDistEl) {
     quickDistEl.addEventListener("input", (e) => {
       const dist = parseFloat(e.target.value);
-      const text = `Distance: ${dist.toFixed(2)} (Similarity: ${(1 - dist).toFixed(2)})`;
+      const text = `Distance: ${dist.toFixed(2)} (Similarity: ${Math.max(0, 1 - dist).toFixed(2)})`;
       if (badgeQuickDistEl) badgeQuickDistEl.textContent = text;
       const cfgFaceDist = document.getElementById("cfg-face-distance");
       const badgeCfgDist = document.getElementById("badge-face-distance");

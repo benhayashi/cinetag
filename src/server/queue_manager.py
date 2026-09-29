@@ -377,6 +377,16 @@ class QueueManager:
             else:
                 raise ValueError(f"Unknown vision provider: {cfg.vision_provider}")
 
+            # Clean and normalize any AI-generated people/subject names (e.g. "man/father 'Ben'" -> "Ben")
+            if analysis.people_or_subjects:
+                from src.media.faces import clean_person_name
+                cleaned_people = []
+                for p in analysis.people_or_subjects:
+                    clean_p = clean_person_name(p)
+                    if clean_p and clean_p not in cleaned_people:
+                        cleaned_people.append(clean_p)
+                analysis.people_or_subjects = cleaned_people
+
             # 4b. Facial Recognition (Hybrid: Built-in local or CompreFace)
             if cfg.face_recognition_enabled:
                 task.stage = "Facial recognition"

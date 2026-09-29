@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import threading
 import time
@@ -89,6 +90,97 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
     if norm_a == 0 or norm_b == 0:
         return 0.0
     return float(dot / (norm_a * norm_b))
+
+GENERIC_PERSON_WORDS = {
+    "person", "people", "man", "woman", "child", "children", "kid", "kids",
+    "boy", "girl", "baby", "toddler", "teen", "teenager", "adult", "someone",
+    "unknown", "crowd", "audience", "individual", "subject", "spectator",
+    "bystander", "family", "friend", "friends", "stranger", "worker", "player",
+    "young", "little", "old", "elderly", "tall", "short"
+}
+FAMILY_ROLE_WORDS = {
+    "father", "mother", "dad", "mom", "brother", "sister", "son", "daughter",
+    "uncle", "aunt", "cousin", "grandpa", "grandmother", "grandfather",
+    "grandma", "husband", "wife", "parent", "parents"
+}
+ALL_DESCRIPTIVE_WORDS = GENERIC_PERSON_WORDS | FAMILY_ROLE_WORDS
+
+def is_descriptive(s: str) -> bool:
+    """Return True if string consists entirely of generic role or demographic descriptors."""
+    if not s or not isinstance(s, str):
+        return True
+    tokens = [t.lower() for t in re.split(r"[\s/,\-_]+", s.strip()) if t]
+    return bool(tokens and all(t in ALL_DESCRIPTIVE_WORDS for t in tokens))
+
+def clean_person_name(raw: str, preserve_role: bool = False) -> str:
+    """
+    Extracts the clean personal name from AI-generated subject descriptions.
+    e.g.
+      "man/father 'Ben'" -> "Ben"
+      'father "Ben"' -> "Ben"
+      "father (Ben)" -> "Ben"
+      "Ben (father/man)" -> "Ben"
+      "father: Ben" -> "Ben"
+      "man/father - Ben" -> "Ben"
+      "man / Ben" -> "Ben"
+      "a man named Ben" -> "Ben"
+      "'Ben'" -> "Ben"
+    If preserve_role is True, formats as 'Ben (father/man)' when a role is detected.
+    Falls back to the stripped original if no pattern matches.
+    """
+    if not raw or not isinstance(raw, str):
+        return ""
+    s = raw.strip()
+
+    # 1. Quotes: e.g. man/father 'Ben', father "Ben", 'Ben'
+    q_match = re.search(r"['\"‘“]([A-Za-z0-9_\-\s]+)['\"’”]", s)
+    if q_match:
+        name_cand = q_match.group(1).strip()
+        role_cand = (s[:q_match.start()] + " " + s[q_match.end():]).strip(" /:,-–—")
+        if name_cand and not is_descriptive(name_cand):
+            if preserve_role and role_cand and is_descriptive(role_cand):
+                return f"{name_cand} ({role_cand})"
+            return name_cand
+
+    # 2. Parentheses: e.g. father (Ben) or Ben (father/man)
+    p_match = re.search(r"\(([^)]+)\)", s)
+    if p_match:
+        inside = p_match.group(1).strip()
+        outside = (s[:p_match.start()] + " " + s[p_match.end():]).strip(" /:,-–—")
+        if is_descriptive(outside) and not is_descriptive(inside):
+            if preserve_role and outside:
+                return f"{inside} ({outside})"
+            return inside
+        elif is_descriptive(inside) and not is_descriptive(outside):
+            if preserve_role and inside:
+                return f"{outside} ({inside})"
+            return outside
+
+    # 3. Delimiters: 'father: Ben', 'man/father - Ben', 'father / Ben'
+    for sep in [":", " - ", " -- ", " — ", " / "]:
+        if sep in s:
+            parts = [p.strip() for p in s.split(sep) if p.strip()]
+            if len(parts) == 2:
+                left, right = parts[0], parts[1]
+                if is_descriptive(left) and not is_descriptive(right):
+                    if preserve_role:
+                        return f"{right} ({left})"
+                    return right
+                elif is_descriptive(right) and not is_descriptive(left):
+                    if preserve_role:
+                        return f"{left} ({right})"
+                    return left
+
+    # 4. Phrasing: 'man named Ben', 'boy called Tommy'
+    phrase_match = re.search(r"(?:named|called|identified as)\s+['\"‘“]?([A-Za-z0-9_\-\s]+)['\"’”]?", s, re.I)
+    if phrase_match:
+        cand = phrase_match.group(1).strip()
+        if cand and not is_descriptive(cand):
+            return cand
+
+    # 5. Clean standalone quotes/whitespace
+    cleaned = s.strip("'\"‘“’” ")
+    return cleaned
 
 class FaceRegistry:
     """Persistent registry for recognized faces and auto-generated person clusters."""
@@ -417,11 +509,10 @@ class FaceRegistry:
 
             valid_names = []
             for n in ai_people_names:
-                clean = n.strip()
-                if not clean:
+                clean = clean_person_name(n)
+                if not clean or clean.startswith("Person_"):
                     continue
-                lower = clean.lower()
-                if lower in ("person", "people", "man", "woman", "child", "boy", "girl", "someone", "unknown", "crowd", "audience"):
+                if is_descriptive(clean):
                     continue
                 if clean not in valid_names:
                     valid_names.append(clean)
@@ -473,9 +564,10 @@ class FaceRegistry:
                                 analysis = jdata.get("analysis", {})
                                 people = analysis.get("people_or_subjects", [])
                                 valid = [
-                                    p.strip() for p in people
-                                    if p.strip() and not p.strip().startswith("Person_")
-                                    and p.strip().lower() not in ("person", "people", "man", "woman", "child", "boy", "girl")
+                                    clean_person_name(p) for p in people
+                                    if p and clean_person_name(p)
+                                    and not clean_person_name(p).startswith("Person_")
+                                    and not is_descriptive(clean_person_name(p))
                                 ]
                                 if valid:
                                     for cand_name in valid:
@@ -637,8 +729,8 @@ class FaceRegistry:
     ) -> Tuple[str, str]:
         """Register or associate a named subject identified from video analysis."""
         with self._lock:
-            clean_name = name.strip()
-            if not clean_name:
+            clean_name = clean_person_name(name)
+            if not clean_name or clean_name.startswith("Person_") or is_descriptive(clean_name):
                 return "", ""
 
             match_id = None

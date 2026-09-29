@@ -125,3 +125,95 @@ def test_timestamp_without_z():
     )
     assert name == "20240518_183000_Skiing_Vacation.mp4"
     assert "Z" not in name.split("_")[1]
+
+
+def test_clean_person_name():
+    from src.media.faces import clean_person_name, is_descriptive
+
+    # Direct quoted names with roles / descriptors
+    assert clean_person_name("man/father 'Ben'") == "Ben"
+    assert clean_person_name('father "Ben"') == "Ben"
+    assert clean_person_name("'Ben'") == "Ben"
+    assert clean_person_name('"Ben"') == "Ben"
+    assert clean_person_name("“Ben”") == "Ben"
+
+    # Parenthesized names and roles
+    assert clean_person_name("father (Ben)") == "Ben"
+    assert clean_person_name("man/father (Ben)") == "Ben"
+    assert clean_person_name("Ben (father/man)") == "Ben"
+    assert clean_person_name("Ben (father)") == "Ben"
+
+    # Delimiter formats
+    assert clean_person_name("father: Ben") == "Ben"
+    assert clean_person_name("man/father - Ben") == "Ben"
+    assert clean_person_name("man / Ben") == "Ben"
+    assert clean_person_name("Ben / father") == "Ben"
+
+    # Phrasing
+    assert clean_person_name("a man named Ben") == "Ben"
+    assert clean_person_name("boy called Tommy") == "Tommy"
+
+    # Preserve role style
+    assert clean_person_name("man/father 'Ben'", preserve_role=True) == "Ben (man/father)"
+    assert clean_person_name("father (Ben)", preserve_role=True) == "Ben (father)"
+    assert clean_person_name("Ben (father/man)", preserve_role=True) == "Ben (father/man)"
+
+    # Pure names
+    assert clean_person_name("Sarah") == "Sarah"
+    assert clean_person_name("Grandma Betty") == "Grandma Betty"
+
+    # Generic check
+    assert is_descriptive("Young boy") is True
+    assert is_descriptive("man/father") is True
+    assert is_descriptive("Ben") is False
+    assert is_descriptive("Grandma Betty") is False
+
+
+def test_face_correlate_guesses_full_name_cleanly(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEO_DESCRIBER_DATA_DIR", str(tmp_path))
+    registry = FaceRegistry()
+
+    now_iso = "2026-09-27T10:00:00"
+    registry._data["person_ben"] = {
+        "id": "person_ben",
+        "name": "Person_01",
+        "user_named": False,
+        "ai_guessed": False,
+        "embedding": [0.0] * 128,
+        "video_count": 1,
+        "video_paths": ["/tmp/ben.mp4"],
+        "created_at": now_iso,
+        "last_seen": now_iso
+    }
+    registry._save()
+
+    matches = registry.correlate_and_guess_names(
+        detected_face_ids=["person_ben"],
+        ai_people_names=["man/father 'Ben'"],
+        video_path="/tmp/ben.mp4",
+        summary="Ben playing basketball with his kids"
+    )
+
+    assert len(matches) == 1
+    assert matches[0]["new_name"] == "Ben"
+    assert registry._data["person_ben"]["name"] == "Ben"
+
+
+def test_high_recognition_distance_slider(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEO_DESCRIBER_DATA_DIR", str(tmp_path))
+    # Test setting high face_max_distance (e.g. 0.85 and 0.95)
+    res = client.post("/api/config", json={
+        "face_max_distance": 0.85
+    })
+    assert res.status_code == 200
+    assert res.json()["config"]["face_max_distance"] == 0.85
+
+    res2 = client.post("/api/faces/reindex", json={
+        "max_distance": 0.90
+    })
+    assert res2.status_code == 200
+    data = res2.json()
+    assert data["status"] == "ok"
+    assert data["active_max_distance"] == 0.90
+    assert abs(data["active_threshold"] - 0.10) < 1e-4
+

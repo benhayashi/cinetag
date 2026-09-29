@@ -502,11 +502,12 @@
                   </label>
                   <span id="badge-faces-quick-distance" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.85rem; padding: 0.15rem 0.5rem;">Distance: 0.45 (Similarity: 0.55)</span>
                 </div>
-                <input type="range" id="faces-quick-distance" class="form-range w-100" min="0.20" max="0.65" step="0.02" value="0.45" style="width: 100%;">
+                <input type="range" id="faces-quick-distance" class="form-range w-100" min="0.20" max="0.95" step="0.02" value="0.45" style="width: 100%;">
                 <div class="flex-between text-muted mt-1" style="font-size: 0.75rem;">
-                  <span>0.20 (Strict / Separate IDs)</span>
-                  <span>0.45 (Balanced Default)</span>
-                  <span>0.65 (Permissive / Merge Same Person)</span>
+                  <span>0.20 (Strict)</span>
+                  <span>0.45 (Balanced)</span>
+                  <span>0.70 (High Coherence)</span>
+                  <span>0.95 (Ultra-Permissive)</span>
                 </div>
               </div>
             </div>
@@ -909,19 +910,20 @@
                   </label>
                   <span id="badge-face-distance" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.9rem; padding: 0.2rem 0.6rem;">Distance: 0.45 (Similarity: 0.55)</span>
                 </div>
-                <input type="range" id="cfg-face-distance" class="form-range w-100" min="0.20" max="0.65" step="0.02" value="0.45" style="width: 100%;">
+                <input type="range" id="cfg-face-distance" class="form-range w-100" min="0.20" max="0.95" step="0.02" value="0.45" style="width: 100%;">
                 
                 <div class="slider-ticks flex-between mt-1 text-muted" style="font-size: 0.75rem;">
-                  <span>0.20 (Strict / Distinct Identities)</span>
-                  <span>0.45 (Balanced / High Coherence)</span>
-                  <span>0.65 (Permissive / Merged)</span>
+                  <span>0.20 (Strict)</span>
+                  <span>0.45 (Balanced)</span>
+                  <span>0.70 (High Coherence)</span>
+                  <span>0.95 (Ultra-Permissive)</span>
                 </div>
 
                 <div class="helper-box mt-2 p-2" style="background: rgba(30, 41, 59, 0.7); border-radius: 6px; font-size: 0.8rem; line-height: 1.4;">
                   <p><strong>ℹ️ What this controls:</strong> Clustering tolerance when linking detected faces to person profiles (e.g. <code>Person_01</code>).</p>
                   <ul style="margin: 0.3rem 0 0 1.2rem; padding: 0;">
-                    <li><strong>Higher Distance (0.45 - 0.60):</strong> <em>Recommended if the same person is split into multiple entries</em>. Clusters varied camera angles, head turns, expressions, smiles, and lighting changes into a single individual.</li>
-                    <li><strong>Lower Distance (0.20 - 0.35):</strong> <em>Stricter identity separation</em>. Distinguishes very similar-looking siblings or relatives, but may create multiple profiles for the same person if lighting or hairstyle changes.</li>
+                    <li><strong>Higher Distance (0.50 - 0.95):</strong> <em>Recommended if the same person is split into multiple entries</em>. Clusters varied camera angles, head turns, expressions, smiles, profile views, and lighting changes into a single individual.</li>
+                    <li><strong>Lower Distance (0.20 - 0.40):</strong> <em>Stricter identity separation</em>. Distinguishes very similar-looking siblings or relatives, but may create multiple profiles for the same person if lighting or hairstyle changes.</li>
                   </ul>
                 </div>
               </div>

@@ -67,7 +67,7 @@ class AppConfig(BaseModel):
     face_recognition_enabled: bool = True
     face_provider: str = Field(default="builtin", description="builtin | compreface")
     face_detection_confidence: float = Field(default=0.70, description="Minimum detection confidence threshold (0.30 - 0.95). Higher strictly rejects hands/elbows.")
-    face_max_distance: float = Field(default=0.45, description="Maximum recognition distance (0.20 strict to 0.65 permissive). Higher values increase coherence for varied angles/lighting of the same person.")
+    face_max_distance: float = Field(default=0.45, description="Maximum recognition distance (0.20 strict to 0.95 permissive). Higher values increase coherence for varied angles/lighting of the same person.")
     face_match_threshold: float = Field(default=0.55, description="Cosine similarity threshold for clustering faces into person identities (1.0 - max_distance)")
     compreface_url: str = Field(default="http://localhost:8000")
     compreface_api_key: str = Field(default="")
