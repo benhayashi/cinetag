@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from src.ai.base import VideoAnalysisResult
+from src.media.probe import SUPPORTED_EXTENSIONS
 
 def resolve_sidecar_path(target_path: Path, conflict_mode: str = "overwrite") -> Path:
     """
@@ -21,11 +22,11 @@ def resolve_sidecar_path(target_path: Path, conflict_mode: str = "overwrite") ->
     if name.endswith(".info.json"):
         prefix = name[:-10]
         ext = ".info.json"
-    elif any(name.lower().endswith(f"{v_ext}.txt") for v_ext in [".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mts"]):
+    elif any(name.lower().endswith(f"{v_ext}.txt") for v_ext in SUPPORTED_EXTENSIONS):
         dot_idx = name.rfind(".", 0, name.rfind("."))
         prefix = name[:dot_idx]
         ext = name[dot_idx:]
-    elif any(name.lower().endswith(f"{v_ext}.edl") for v_ext in [".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mts"]):
+    elif any(name.lower().endswith(f"{v_ext}.edl") for v_ext in SUPPORTED_EXTENSIONS):
         dot_idx = name.rfind(".", 0, name.rfind("."))
         prefix = name[:dot_idx]
         ext = name[dot_idx:]

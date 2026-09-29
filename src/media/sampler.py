@@ -107,7 +107,23 @@ def extract_frames(
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
             except Exception as e:
                 logger.warning(f"Failed to extract frame at {ts}s for {video_path.name}: {e}")
-                continue
+
+            # Fallback for FLV or containers that fail fast pre-input seeking (-ss before -i)
+            if not out_frame.exists() or out_frame.stat().st_size == 0:
+                fallback_cmd = [
+                    ffmpeg_bin,
+                    "-y",
+                    "-i", str(video_path),
+                    "-ss", str(ts),
+                    "-vframes", "1",
+                    "-vf", scale_filter,
+                    "-q:v", "3",
+                    str(out_frame)
+                ]
+                try:
+                    subprocess.run(fallback_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                except Exception as e:
+                    logger.warning(f"Fallback frame extraction failed at {ts}s for {video_path.name}: {e}")
 
         if out_frame.exists() and out_frame.stat().st_size > 0:
             extracted.append({

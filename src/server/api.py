@@ -448,7 +448,7 @@ def pick_native_files(initial_dir: Optional[str] = None) -> Dict[str, Any]:
         cmd = [
             "zenity", "--file-selection", "--multiple", "--separator=|",
             "--title=Select Video Clips",
-            "--file-filter=Video files | *.mp4 *.mov *.mkv *.avi *.webm *.m4v *.mts *.MP4 *.MOV *.MKV *.AVI *.WEBM *.MTS"
+            "--file-filter=Video files | *.mp4 *.mov *.mkv *.avi *.webm *.m4v *.mts *.m2ts *.wmv *.flv *.MP4 *.MOV *.MKV *.AVI *.WEBM *.MTS *.FLV *.WMV"
         ]
         if initial_dir and Path(initial_dir).is_dir():
             cmd.append(f"--filename={Path(initial_dir).resolve()}/")
@@ -464,7 +464,7 @@ def pick_native_files(initial_dir: Optional[str] = None) -> Dict[str, Any]:
 
     # 2. macOS AppleScript
     if sys.platform == "darwin":
-        script = 'set chosen to choose file with prompt "Select Video Clips" of type {"public.movie", "mp4", "mov", "mkv", "avi"} with multiple selections allowed\nset out to ""\nrepeat with f in chosen\nset out to out & POSIX path of f & linefeed\nend repeat\nout'
+        script = 'set chosen to choose file with prompt "Select Video Clips" of type {"public.movie", "mp4", "mov", "mkv", "avi", "flv", "webm", "wmv", "m4v"} with multiple selections allowed\nset out to ""\nrepeat with f in chosen\nset out to out & POSIX path of f & linefeed\nend repeat\nout'
         try:
             res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=180)
             if res.returncode == 0 and res.stdout.strip():
@@ -477,7 +477,7 @@ def pick_native_files(initial_dir: Optional[str] = None) -> Dict[str, Any]:
 
     # 3. Windows PowerShell
     if os.name == "nt":
-        ps_cmd = "[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Multiselect = $true; $f.Filter = 'Video files (*.mp4;*.mov;*.mkv;*.avi)|*.mp4;*.mov;*.mkv;*.avi|All files (*.*)|*.*'; if ($f.ShowDialog() -eq 'OK') { [string]::Join('|', $f.FileNames) }"
+        ps_cmd = "[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Multiselect = $true; $f.Filter = 'Video files (*.mp4;*.mov;*.mkv;*.avi;*.flv;*.wmv;*.webm;*.m4v;*.mts;*.m2ts)|*.mp4;*.mov;*.mkv;*.avi;*.flv;*.wmv;*.webm;*.m4v;*.mts;*.m2ts|All files (*.*)|*.*'; if ($f.ShowDialog() -eq 'OK') { [string]::Join('|', $f.FileNames) }"
         try:
             res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True, text=True, timeout=180)
             if res.returncode == 0 and res.stdout.strip():
@@ -499,7 +499,7 @@ def pick_native_files(initial_dir: Optional[str] = None) -> Dict[str, Any]:
             files = filedialog.askopenfilenames(
                 initialdir=initial_dir or str(Path.home()),
                 title="Select Video Clips",
-                filetypes=[("Video files", "*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.mts"), ("All files", "*.*")]
+                filetypes=[("Video files", "*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.mts *.m2ts *.wmv *.flv"), ("All files", "*.*")]
             )
             root.destroy()
             if files:
