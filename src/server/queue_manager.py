@@ -40,6 +40,7 @@ class TaskItem(BaseModel):
     result: Optional[Dict[str, Any]] = None
     date_override: Optional[str] = None
     date_source: Optional[str] = None
+    prompt_guidance: Optional[str] = None
 
 class QueueManager:
     """Manages background batch processing queue and worker thread."""
@@ -75,7 +76,8 @@ class QueueManager:
         file_paths: List[str],
         conflict_mode: str = "overwrite",
         date_override: Optional[str] = None,
-        date_source: Optional[str] = None
+        date_source: Optional[str] = None,
+        prompt_guidance: Optional[str] = None
     ) -> List[TaskItem]:
         with self._lock:
             added = []
@@ -91,7 +93,8 @@ class QueueManager:
                         filename=p.name,
                         conflict_mode=conflict_mode,
                         date_override=date_override,
-                        date_source=date_source
+                        date_source=date_source,
+                        prompt_guidance=prompt_guidance
                     )
                     self.queue.append(task)
                     added.append(task)
@@ -318,26 +321,59 @@ class QueueManager:
             if subtitle_dialogue and transcript and transcript != subtitle_dialogue:
                 extra_ctx = f"Subtitles:\n{subtitle_dialogue}"
 
+            # Combine guidance: task prompt guidance or batch guidance + default guidance
+            guidance_notes = []
+            if cfg.default_prompt_guidance and cfg.default_prompt_guidance.strip():
+                guidance_notes.append(cfg.default_prompt_guidance.strip())
+            active_batch_guidance = (task.prompt_guidance or cfg.batch_prompt_guidance or "").strip()
+            if active_batch_guidance and active_batch_guidance not in guidance_notes:
+                guidance_notes.append(active_batch_guidance)
+
+            combined_guidance = "\n\n".join(guidance_notes) if guidance_notes else None
+            if combined_guidance:
+                short_note = combined_guidance.replace("\n", " ")
+                if len(short_note) > 60:
+                    short_note = short_note[:57] + "..."
+                self.log(f"Applying AI guidance focus: \"{short_note}\"", task_id=task.id)
+
             analysis: VideoAnalysisResult
             if cfg.vision_provider == "ollama":
                 provider = OllamaVisionProvider(
                     base_url=cfg.ollama_url,
                     default_model=cfg.ollama_model
                 )
-                analysis = provider.describe_video(frames, audio_transcript=transcript, context_prompt=extra_ctx)
+                analysis = provider.describe_video(
+                    frames,
+                    audio_transcript=transcript,
+                    context_prompt=extra_ctx,
+                    system_prompt=cfg.custom_system_prompt,
+                    prompt_guidance=combined_guidance
+                )
             elif cfg.vision_provider == "openai_compatible":
                 provider = OpenAICompatibleVisionProvider(
                     base_url=cfg.openai_compatible_url,
                     api_key=cfg.openai_compatible_api_key,
                     default_model=cfg.openai_compatible_model
                 )
-                analysis = provider.describe_video(frames, audio_transcript=transcript, context_prompt=extra_ctx)
+                analysis = provider.describe_video(
+                    frames,
+                    audio_transcript=transcript,
+                    context_prompt=extra_ctx,
+                    system_prompt=cfg.custom_system_prompt,
+                    prompt_guidance=combined_guidance
+                )
             elif cfg.vision_provider == "cloud":
                 provider = CloudVisionProvider(
                     provider=cfg.cloud_provider,
                     api_keys=cfg.api_keys
                 )
-                analysis = provider.describe_video(frames, audio_transcript=transcript, context_prompt=extra_ctx)
+                analysis = provider.describe_video(
+                    frames,
+                    audio_transcript=transcript,
+                    context_prompt=extra_ctx,
+                    system_prompt=cfg.custom_system_prompt,
+                    prompt_guidance=combined_guidance
+                )
             else:
                 raise ValueError(f"Unknown vision provider: {cfg.vision_provider}")
 

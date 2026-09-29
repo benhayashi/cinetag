@@ -32,12 +32,20 @@ Important Rules:
 5. Keep the suggested_filename lowercase with underscores, without extension or dates.
 6. Output ONLY the raw JSON object, without introductory text or markdown formatting if possible.
 """
+DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
+
+def get_system_prompt(custom_prompt: Optional[str] = None) -> str:
+    """Return active system prompt, falling back to DEFAULT_SYSTEM_PROMPT if custom_prompt is empty."""
+    if custom_prompt and custom_prompt.strip():
+        return custom_prompt.strip()
+    return DEFAULT_SYSTEM_PROMPT
 
 def build_user_prompt(
     timestamps: List[str],
     audio_transcript: Optional[str] = None,
     context: Optional[str] = None,
-    subtitle_dialogue: Optional[str] = None
+    subtitle_dialogue: Optional[str] = None,
+    prompt_guidance: Optional[str] = None
 ) -> str:
     parts = ["Here are the sampled video frames taken at timestamps: " + ", ".join(timestamps) + "."]
     
@@ -50,7 +58,15 @@ def build_user_prompt(
         parts.append("\n(No speech or audio dialogue detected in this clip)")
 
     if context and context.strip():
-        parts.append(f"\nAdditional user context about this collection:\n{context.strip()}")
+        parts.append(f"\nAdditional context about the video/people:\n{context.strip()}")
+
+    if prompt_guidance and prompt_guidance.strip():
+        parts.append(
+            "\n=== User Guidance & Specific Focus Instructions ===\n"
+            + prompt_guidance.strip()
+            + "\n\n(Important: Please prioritize identifying these specific individuals, locations, actions, and visual cues in the title, summary, people_or_subjects, tags, and events when observed.)"
+            + "\n===================================================="
+        )
 
     parts.append("\nPlease output the JSON analysis according to the specified schema.")
     return "\n".join(parts)

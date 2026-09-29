@@ -45,7 +45,10 @@ class BaseVisionProvider(ABC):
         frames: List[FrameItem],
         audio_transcript: Optional[str] = None,
         context_prompt: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        prompt_guidance: Optional[str] = None
     ) -> VideoAnalysisResult:
         """Analyze sampled video frames and optional audio transcript."""
         pass
+

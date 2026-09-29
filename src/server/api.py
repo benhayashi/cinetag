@@ -62,6 +62,10 @@ class AddQueueRequest(BaseModel):
     conflict_mode: str = "overwrite"  # "overwrite" | "enumerate"
     date_override: Optional[str] = None
     date_source: Optional[str] = None
+    prompt_guidance: Optional[str] = None
+
+class BatchPromptGuidanceRequest(BaseModel):
+    prompt_guidance: str
 
 class CheckConflictsRequest(BaseModel):
     file_paths: List[str]
@@ -181,9 +185,38 @@ def add_to_queue(req: AddQueueRequest):
         req.file_paths,
         conflict_mode=req.conflict_mode,
         date_override=req.date_override,
-        date_source=req.date_source
+        date_source=req.date_source,
+        prompt_guidance=req.prompt_guidance
     )
     return {"status": "ok", "added_count": len(added)}
+
+@router.get("/prompts/defaults")
+def get_prompt_defaults():
+    """Return default system prompt and active prompt configurations."""
+    from src.ai.prompt import DEFAULT_SYSTEM_PROMPT
+    cfg = load_config()
+    return {
+        "default_system_prompt": DEFAULT_SYSTEM_PROMPT,
+        "custom_system_prompt": cfg.custom_system_prompt,
+        "default_prompt_guidance": cfg.default_prompt_guidance,
+        "batch_prompt_guidance": cfg.batch_prompt_guidance
+    }
+
+@router.post("/queue/prompt-guidance")
+def set_batch_prompt_guidance(req: BatchPromptGuidanceRequest):
+    """Set active batch guidance prompt for queue processing."""
+    cfg = load_config()
+    cfg.batch_prompt_guidance = req.prompt_guidance.strip()
+    save_config(cfg)
+    # Update pending tasks without custom guidance
+    for task in manager.queue:
+        if task.status == "queued" and not task.prompt_guidance:
+            task.prompt_guidance = req.prompt_guidance.strip()
+    return {
+        "status": "ok",
+        "batch_prompt_guidance": cfg.batch_prompt_guidance,
+        "prompt_guidance": cfg.batch_prompt_guidance
+    }
 
 def find_existing_sidecars(p: Path) -> List[str]:
     parent = p.parent

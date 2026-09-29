@@ -199,6 +199,37 @@
             <button id="btn-goto-batch-rename" class="btn btn-sm btn-secondary" title="Batch rename already-processed clips with a new date schema or override">🏷️ Re-Rename Completed Clips with New Date</button>
           </div>
 
+          <!-- Batch AI Focus & Guidance Bar -->
+          <div class="batch-guidance-bar mt-2 p-3" style="background: rgba(30, 41, 59, 0.5); border: 1px solid var(--border-color); border-radius: 8px;">
+            <div class="flex-between align-center mb-1">
+              <label for="queue-prompt-guidance" style="font-weight: 600; font-size: 0.85rem; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem;">
+                <span>🎯</span>
+                <span>Batch AI Focus & Guidance Prompt</span>
+                <span class="badge" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; font-size: 0.7rem; border: 1px solid rgba(59,130,246,0.3);">Tunes Descriptions</span>
+              </label>
+              <div style="display: flex; gap: 0.4rem; align-items: center;">
+                <button type="button" id="btn-save-guidance-as-default" class="btn btn-sm btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" title="Save current prompt as persistent default in Settings">
+                  ⭐ Save as Default
+                </button>
+                <button type="button" id="btn-clear-queue-guidance" class="btn btn-sm btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" title="Clear prompt guidance">
+                  ✕ Clear
+                </button>
+              </div>
+            </div>
+            <textarea id="queue-prompt-guidance" class="form-control" rows="2" style="font-size: 0.82rem; resize: vertical; min-height: 52px;" placeholder="e.g. Vacation to Banff, Alberta. Look for Lake Louise, hiking trails, mountains, Ben (wearing blue jacket), Sarah. Note wildlife or weather."></textarea>
+            <div class="flex-between align-center mt-2" style="flex-wrap: wrap; gap: 0.4rem;">
+              <div style="display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
+                <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">Quick Presets:</span>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="trip" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">✈️ Trip / Vacation</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="birthday" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">🎂 Birthday / Party</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="sports" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">🏀 Sports / Outdoors</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="home" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">🏡 Home / Family</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-guidance" data-preset="pets" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">🐾 Pets / Animals</button>
+              </div>
+              <small class="text-muted" style="font-size: 0.72rem;">Instructs VLM on specific people, locations, actions, and details to prioritize.</small>
+            </div>
+          </div>
+
           <div class="progress-box">
             <div class="progress-label">
               <span id="current-task-name">No active file</span>
@@ -620,6 +651,35 @@
               </div>
             </div>
           </div>
+
+          <hr class="divider">
+
+          <h3>🧠 AI System Prompt & Description Guidance</h3>
+          <p class="card-desc">Customize how Vision models analyze footage. Provide permanent archive guidance or modify the master system prompt used across Ollama, LM Studio, and Cloud backends.</p>
+
+          <div class="form-group mt-2">
+            <label for="cfg-default-prompt-guidance" style="font-weight: 600;">Default Guidance & Archive Context (Permanent Addendum)</label>
+            <textarea id="cfg-default-prompt-guidance" class="form-control" rows="3" style="font-size: 0.85rem;" placeholder="e.g. Focus on family members, sports games, outdoor activities. Always mention camera perspective, landscape, and notable background objects."></textarea>
+            <small class="helper-text">This guidance is automatically merged with any batch-specific focus prompt during queue processing.</small>
+          </div>
+
+          <details class="mt-3" style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem;">
+            <summary style="font-weight: 600; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
+              🛠️ Advanced Master System Prompt Editor
+            </summary>
+            <div class="mt-2">
+              <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 0.5rem;">
+                The master prompt instructs the AI model to output valid JSON matching CineTag's schema. Leave empty to use the built-in system prompt.
+              </p>
+              <textarea id="cfg-custom-system-prompt" class="form-control" rows="8" style="font-family: monospace; font-size: 0.8rem; white-space: pre;" placeholder="Leave blank to use CineTag built-in default system prompt..."></textarea>
+              <div class="flex-between align-center mt-2">
+                <button type="button" id="btn-reset-system-prompt" class="btn btn-sm btn-secondary" style="font-size: 0.8rem;">
+                  🔄 Reset to CineTag Default System Prompt
+                </button>
+                <span id="system-prompt-status" class="text-muted" style="font-size: 0.75rem;"></span>
+              </div>
+            </div>
+          </details>
 
           <hr class="divider">
 

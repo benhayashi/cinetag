@@ -29,6 +29,11 @@ class AppConfig(BaseModel):
         "openai": ""
     })
 
+    # AI Prompt Guidance & Description Tuning
+    custom_system_prompt: Optional[str] = Field(default=None, description="Custom system prompt override (None uses default)")
+    default_prompt_guidance: str = Field(default="", description="Permanent guidance addendum included in all video descriptions (e.g. key family names, locations, tone)")
+    batch_prompt_guidance: str = Field(default="", description="Active batch guidance prompt for current queue processing")
+
     # Whisper Audio Transcription & Subtitles
     transcribe_audio: bool = True
     whisper_backend: str = Field(default="faster-whisper", description="faster-whisper | openai-whisper | remote | none")

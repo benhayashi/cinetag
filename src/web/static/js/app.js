@@ -926,6 +926,8 @@ async function executeQueueAdd(filePaths, conflictMode, autoStart) {
       }
     }
 
+    let promptGuidance = document.getElementById("queue-prompt-guidance")?.value.trim() || undefined;
+
     const res = await fetch("/api/queue/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -933,7 +935,8 @@ async function executeQueueAdd(filePaths, conflictMode, autoStart) {
         file_paths: filePaths,
         conflict_mode: conflictMode,
         date_override: dateOverride,
-        date_source: dateSource
+        date_source: dateSource,
+        prompt_guidance: promptGuidance
       })
     });
     if (!res.ok) {
@@ -1056,6 +1059,77 @@ function initQueueControls() {
       pollStatus();
     }
   });
+
+  // Batch AI Guidance Presets & Actions
+  const presetMap = {
+    trip: "Vacation / Travel trip. Focus on scenic landmarks, beaches, mountains, cities, hotels, family members, local culture, activities, and transport (planes, trains, cars).",
+    birthday: "Birthday celebration or party. Focus on the birthday person, blowing out candles, cake, opening gifts, family and friends gathered, laughter, decorations.",
+    sports: "Athletic event, match, or practice. Focus on game action, key plays, scoreboards, team jerseys, players, coaches, courts, fields, and audience reactions.",
+    home: "Casual everyday home footage or family time. Focus on family interactions, relaxing, cooking, backyard, living room activities, children playing.",
+    pets: "Pets and domestic animals. Focus on pets (dogs, cats, etc.), their breeds/colors, behaviors, playing with toys, tricks, walks, interactions with owners."
+  };
+
+  document.querySelectorAll(".btn-preset-guidance").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const presetKey = btn.dataset.preset;
+      const text = presetMap[presetKey];
+      const textarea = document.getElementById("queue-prompt-guidance");
+      if (textarea && text) {
+        if (textarea.value.trim().length > 0) {
+          textarea.value = textarea.value.trim() + "\n" + text;
+        } else {
+          textarea.value = text;
+        }
+        textarea.dispatchEvent(new Event("change"));
+      }
+    });
+  });
+
+  const btnClearGuidance = document.getElementById("btn-clear-queue-guidance");
+  if (btnClearGuidance) {
+    btnClearGuidance.addEventListener("click", () => {
+      const textarea = document.getElementById("queue-prompt-guidance");
+      if (textarea) {
+        textarea.value = "";
+        textarea.dispatchEvent(new Event("change"));
+      }
+    });
+  }
+
+  const btnSaveGuidanceDefault = document.getElementById("btn-save-guidance-as-default");
+  if (btnSaveGuidanceDefault) {
+    btnSaveGuidanceDefault.addEventListener("click", async () => {
+      const currentVal = document.getElementById("queue-prompt-guidance")?.value.trim() || "";
+      const cfgGuidanceEl = document.getElementById("cfg-default-prompt-guidance");
+      if (cfgGuidanceEl) cfgGuidanceEl.value = currentVal;
+      try {
+        await fetch("/api/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ default_prompt_guidance: currentVal, batch_prompt_guidance: currentVal })
+        });
+        alert("Batch guidance saved as persistent default in Settings!");
+      } catch (e) {
+        console.error("Failed to save guidance as default:", e);
+      }
+    });
+  }
+
+  const queueGuidanceEl = document.getElementById("queue-prompt-guidance");
+  if (queueGuidanceEl) {
+    const syncBatchGuidance = async () => {
+      try {
+        await fetch("/api/queue/prompt-guidance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt_guidance: queueGuidanceEl.value.trim() })
+        });
+      } catch (e) {
+        // silent fail
+      }
+    };
+    queueGuidanceEl.addEventListener("change", syncBatchGuidance);
+  }
 }
 
 // --- Settings & Connectors ---
@@ -1273,6 +1347,19 @@ async function loadConfig() {
     if (dateSourceEl) dateSourceEl.value = cfg.date_source || "smart";
     const dateOverrideEl = document.getElementById("cfg-default-date-override");
     if (dateOverrideEl) dateOverrideEl.value = cfg.default_date_override || "";
+
+    // Prompt Guidance & Custom System Prompt
+    const defaultGuidanceEl = document.getElementById("cfg-default-prompt-guidance");
+    if (defaultGuidanceEl) defaultGuidanceEl.value = cfg.default_prompt_guidance || "";
+
+    const customSystemPromptEl = document.getElementById("cfg-custom-system-prompt");
+    if (customSystemPromptEl) customSystemPromptEl.value = cfg.custom_system_prompt || "";
+
+    const queueGuidanceEl = document.getElementById("queue-prompt-guidance");
+    if (queueGuidanceEl && !queueGuidanceEl.value) {
+      queueGuidanceEl.value = cfg.batch_prompt_guidance || "";
+    }
+
     updateRenameSchemePreview();
 
     // Load Whisper model storage info
@@ -1527,7 +1614,10 @@ function initSettings() {
       temp_retention_policy: document.getElementById("cfg-temp-retention") ? document.getElementById("cfg-temp-retention").value : "immediate",
       sampling_strategy: document.getElementById("cfg-sampling-strategy")?.value || "interval",
       sampling_interval_seconds: parseInt(document.getElementById("cfg-sampling-interval")?.value || "60", 10),
-      max_frames_per_video: parseInt(document.getElementById("cfg-max-frames")?.value || "30", 10)
+      max_frames_per_video: parseInt(document.getElementById("cfg-max-frames")?.value || "30", 10),
+      default_prompt_guidance: document.getElementById("cfg-default-prompt-guidance")?.value.trim() || "",
+      custom_system_prompt: document.getElementById("cfg-custom-system-prompt")?.value.trim() || "",
+      batch_prompt_guidance: document.getElementById("queue-prompt-guidance")?.value.trim() || ""
     };
 
     try {
@@ -1553,6 +1643,30 @@ function initSettings() {
       alert("Failed to save settings: " + e.message);
     }
   });
+
+  // Wire Reset System Prompt Button
+  const btnResetPrompt = document.getElementById("btn-reset-system-prompt");
+  if (btnResetPrompt) {
+    btnResetPrompt.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/prompts/defaults");
+        if (res.ok) {
+          const data = await res.json();
+          const area = document.getElementById("cfg-custom-system-prompt");
+          if (area) {
+            area.value = data.default_system_prompt || "";
+          }
+          const status = document.getElementById("system-prompt-status");
+          if (status) {
+            status.textContent = "Reset to default. Remember to click Save Settings.";
+            setTimeout(() => { status.textContent = ""; }, 4000);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch default system prompt:", e);
+      }
+    });
+  }
 
   // Wire Whisper backend toggle
   const whisperBackendEl = document.getElementById("cfg-whisper-backend");

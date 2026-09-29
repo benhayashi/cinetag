@@ -5,7 +5,7 @@ from typing import List, Optional
 import httpx
 
 from src.ai.base import BaseVisionProvider, FrameItem, VideoAnalysisResult
-from src.ai.prompt import SYSTEM_PROMPT, build_user_prompt, parse_ai_response
+from src.ai.prompt import SYSTEM_PROMPT, get_system_prompt, build_user_prompt, parse_ai_response
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +54,14 @@ class OpenAICompatibleVisionProvider(BaseVisionProvider):
         frames: List[FrameItem],
         audio_transcript: Optional[str] = None,
         context_prompt: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        prompt_guidance: Optional[str] = None
     ) -> VideoAnalysisResult:
         chosen_model = model or self.default_model
         timestamps = [f.timecode for f in frames]
-        user_text = build_user_prompt(timestamps, audio_transcript, context_prompt)
+        user_text = build_user_prompt(timestamps, audio_transcript, context_prompt, prompt_guidance=prompt_guidance)
+        active_system_prompt = get_system_prompt(system_prompt)
 
         content_parts = [{"type": "text", "text": user_text}]
 
@@ -77,7 +80,7 @@ class OpenAICompatibleVisionProvider(BaseVisionProvider):
         payload = {
             "model": chosen_model,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": active_system_prompt},
                 {"role": "user", "content": content_parts}
             ],
             "temperature": 0.2
