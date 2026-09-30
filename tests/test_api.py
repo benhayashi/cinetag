@@ -290,6 +290,72 @@ def test_api_flush_backups(tmp_path):
     assert vid.exists()
 
 
+def test_api_queue_stop_and_delete_item(tmp_path):
+    from src.server.api import manager
+
+    # Create dummy files in two different directories
+    folder_a = tmp_path / "folder_a"
+    folder_b = tmp_path / "folder_b"
+    folder_a.mkdir()
+    folder_b.mkdir()
+
+    vid_a = folder_a / "clip_a.mp4"
+    vid_b = folder_b / "clip_b.mp4"
+    vid_a.write_bytes(b"dummy_a")
+    vid_b.write_bytes(b"dummy_b")
+
+    # Clear queue first
+    client.post("/api/queue/clear")
+
+    # Add both files from different folders
+    res = client.post("/api/queue/add", json={
+        "file_paths": [str(vid_a), str(vid_b)],
+        "conflict_mode": "overwrite"
+    })
+    assert res.status_code == 200
+    assert res.json()["added_count"] == 2
+
+    # Verify status has both in order
+    res_status = client.get("/api/status")
+    assert res_status.status_code == 200
+    tasks = res_status.json()["tasks"]
+    assert len(tasks) == 2
+    assert tasks[0]["filename"] == "clip_a.mp4"
+    assert tasks[1]["filename"] == "clip_b.mp4"
+    task_b_id = tasks[1]["id"]
+
+    # Test removing second task
+    del_res = client.delete(f"/api/queue/item/{task_b_id}")
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] == "ok"
+
+    # Verify task_b is gone
+    res_status2 = client.get("/api/status")
+    tasks2 = res_status2.json()["tasks"]
+    assert len(tasks2) == 1
+    assert tasks2[0]["filename"] == "clip_a.mp4"
+
+    # Test 404 for non-existent task
+    del_res_404 = client.delete("/api/queue/item/nonexistent123")
+    assert del_res_404.status_code == 404
+
+    # Test stop endpoint
+    stop_res = client.post("/api/queue/stop")
+    assert stop_res.status_code == 200
+    assert stop_res.json()["status"] == "ok"
+    assert manager.is_running is False
+    assert manager.is_paused is True
+
+    # Test prompt guidance save
+    guidance_res = client.post("/api/queue/prompt-guidance", json={"prompt_guidance": "Focus on hiking trail"})
+    assert guidance_res.status_code == 200
+    assert guidance_res.json()["batch_prompt_guidance"] == "Focus on hiking trail"
+
+    # Clean up
+    client.post("/api/queue/clear")
+
+
+
 
 
 

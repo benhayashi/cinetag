@@ -262,6 +262,23 @@ def pause_queue():
     manager.pause()
     return {"status": "ok"}
 
+@router.post("/queue/stop")
+def stop_queue():
+    manager.stop()
+    return {"status": "ok"}
+
+@router.delete("/queue/item/{task_id}")
+def remove_queue_item(task_id: str):
+    task = next((t for t in manager.queue if t.id == task_id), None)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found in queue")
+    if task.status == "processing":
+        raise HTTPException(status_code=400, detail="Cannot remove a task that is currently being processed")
+    success = manager.remove_task(task_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Could not remove task from queue")
+    return {"status": "ok", "task_id": task_id}
+
 @router.post("/queue/clear")
 def clear_queue():
     manager.clear()

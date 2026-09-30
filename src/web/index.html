@@ -174,10 +174,11 @@
                 <input type="checkbox" id="quick-auto-rename-toggle">
                 <span>✨ Auto-Rename: <b id="quick-auto-rename-label" style="color:#94a3b8;">OFF</b></span>
               </label>
-              <button id="btn-queue-start" class="btn btn-success">▶ Start Queue</button>
+              <button id="btn-queue-start" class="btn btn-success">▶ Start Processing</button>
               <button id="btn-queue-pause" class="btn btn-secondary">⏸ Pause</button>
-              <button id="btn-queue-clear-completed" class="btn btn-secondary" title="Remove completed tasks from the queue list">🧹 Clear Processed</button>
-              <button id="btn-queue-clear" class="btn btn-danger-outline">Clear Queue</button>
+              <button id="btn-queue-stop" class="btn btn-danger-outline" style="border-color: #ef4444; color: #ef4444;" title="Stop queue worker from processing next tasks">⏹ Stop Processing</button>
+              <button id="btn-queue-clear" class="btn btn-secondary" title="Clear pending tasks from queue">🧹 Clear Queue</button>
+              <button id="btn-clear-page" class="btn btn-secondary" style="border-color: #64748b;" title="Reset full page: clear queue, discovered clips, uploads, and completed results">✨ Clear Full Page</button>
             </div>
           </div>
 
@@ -208,6 +209,9 @@
                 <span class="badge" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; font-size: 0.7rem; border: 1px solid rgba(59,130,246,0.3);">Tunes Descriptions</span>
               </label>
               <div style="display: flex; gap: 0.4rem; align-items: center;">
+                <button type="button" id="btn-save-queue-guidance" class="btn btn-sm btn-primary" style="font-size: 0.75rem; padding: 0.2rem 0.65rem; font-weight: 600;" title="Save and apply prompt guidance immediately to current batch queue">
+                  💾 Save Guidance
+                </button>
                 <button type="button" id="btn-save-guidance-as-default" class="btn btn-sm btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" title="Save current prompt as persistent default in Settings">
                   ⭐ Save as Default
                 </button>
@@ -245,6 +249,38 @@
             <div class="pill">Processing: <b id="stat-processing">0</b></div>
             <div class="pill success">Completed: <b id="stat-completed">0</b></div>
             <div class="pill danger">Failed: <b id="stat-failed">0</b></div>
+          </div>
+        </div>
+
+        <!-- Active Processing Queue Table -->
+        <div class="card queue-table-card" id="section-queue-table" style="margin-top: 1.25rem;">
+          <div class="card-header flex-between" style="flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <h2>📋 Processing Queue (<span id="queue-count">0</span>)</h2>
+              <span id="queue-engine-badge" class="badge-tag" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; font-size:0.75rem;">Sequential</span>
+            </div>
+            <div class="header-btns" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button id="btn-queue-add-files" class="btn btn-sm btn-primary">🎬 + Add Video File(s)...</button>
+              <button id="btn-queue-clear-completed" class="btn btn-sm btn-secondary" title="Remove completed tasks from the queue list">🧹 Clear Completed</button>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table" id="queue-table">
+              <thead>
+                <tr>
+                  <th width="45">#</th>
+                  <th>Video File & Path</th>
+                  <th>Source Folder</th>
+                  <th width="220">Status & Progress</th>
+                  <th width="110">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="queue-tbody">
+                <tr>
+                  <td colspan="5" class="empty-state">No videos in processing queue. Add files above or select clips to begin.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 

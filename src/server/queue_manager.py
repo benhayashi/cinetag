@@ -103,11 +103,10 @@ class QueueManager:
 
     def start(self):
         with self._lock:
-            if self._worker_thread and self._worker_thread.is_alive():
-                self.is_paused = False
-                return
             self.is_running = True
             self.is_paused = False
+            if self._worker_thread and self._worker_thread.is_alive():
+                return
             self._worker_thread = threading.Thread(target=self._run_loop, daemon=True)
             self._worker_thread.start()
             self.log("Worker queue started.")
@@ -116,6 +115,23 @@ class QueueManager:
         with self._lock:
             self.is_paused = True
             self.log("Worker queue paused.")
+
+    def stop(self):
+        with self._lock:
+            self.is_running = False
+            self.is_paused = True
+            self.log("Worker queue stopped.")
+
+    def remove_task(self, task_id: str) -> bool:
+        with self._lock:
+            for idx, t in enumerate(self.queue):
+                if t.id == task_id:
+                    if t.status == "processing":
+                        return False
+                    del self.queue[idx]
+                    self.log(f"Removed task '{t.filename}' from queue.")
+                    return True
+            return False
 
     def clear(self):
         with self._lock:

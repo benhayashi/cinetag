@@ -540,6 +540,144 @@ async function deleteUploadedFile(filename) {
 }
 
 
+// --- Lightweight In-App Toast Notification ---
+function showToast(message, type = "info") {
+  let container = document.getElementById("toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toast-container";
+    container.style.cssText = "position:fixed; bottom:24px; right:24px; z-index:99999; display:flex; flex-direction:column; gap:8px; pointer-events:none;";
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement("div");
+  const bg = type === "success" ? "#059669" : type === "error" ? "#dc2626" : type === "warning" ? "#d97706" : "#2563eb";
+  toast.style.cssText = `background:${bg}; color:#fff; padding:10px 16px; border-radius:6px; font-size:0.875rem; font-weight:500; box-shadow:0 4px 12px rgba(0,0,0,0.3); opacity:0; transform:translateY(10px); transition:all 0.25s ease; pointer-events:auto; max-width:360px; word-break:break-word;`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.style.opacity = "1";
+    toast.style.transform = "translateY(0)";
+  });
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(10px)";
+    setTimeout(() => toast.remove(), 250);
+  }, 3500);
+}
+
+// --- Active Processing Queue Table ---
+function renderQueueTable(tasks, currentTask) {
+  const tbody = document.getElementById("queue-tbody");
+  const countEl = document.getElementById("queue-count");
+  if (!tbody) return;
+
+  if (countEl) countEl.textContent = tasks ? tasks.length : 0;
+
+  if (!tasks || tasks.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No videos in processing queue. Add files above or select clips to begin.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = tasks.map((t, idx) => {
+    const isProcessing = t.status === "processing" || (currentTask && currentTask.id === t.id && t.status !== "completed" && t.status !== "failed");
+    const rowClass = isProcessing ? 'class="queue-row-active"' : '';
+    
+    // Extract source folder name and directory path
+    let folderName = "";
+    let parentPath = "";
+    try {
+      const normalized = (t.file_path || "").replace(/\\/g, "/");
+      const parts = normalized.split("/");
+      if (parts.length > 1) {
+        folderName = parts[parts.length - 2] || "";
+        parentPath = parts.slice(0, -1).join("/");
+      }
+    } catch (e) {}
+
+    // Status column rendering
+    let statusHtml = "";
+    if (isProcessing) {
+      const prog = (currentTask && currentTask.id === t.id) ? (currentTask.progress || t.progress || 0) : (t.progress || 0);
+      const stage = (currentTask && currentTask.id === t.id) ? (currentTask.stage || t.stage || "Processing") : (t.stage || "Processing");
+      statusHtml = `
+        <div style="display:flex; flex-direction:column; gap:3px;">
+          <div><span class="badge-tag processing">⚡ Processing (${prog}%)</span></div>
+          <div style="font-size:0.75rem; color:#38bdf8; font-weight:500;">${escapeHtml(stage)}</div>
+          <div class="queue-progress-mini">
+            <div class="queue-progress-mini-fill" style="width: ${prog}%;"></div>
+          </div>
+        </div>
+      `;
+    } else if (t.status === "queued") {
+      statusHtml = `<span class="badge-tag queued">⏳ Queued (#${idx + 1})</span>`;
+    } else if (t.status === "completed") {
+      statusHtml = `<span class="badge-tag completed">✅ Completed</span>`;
+    } else if (t.status === "failed") {
+      const errTooltip = t.error ? escapeHtml(t.error) : "Processing failed";
+      statusHtml = `<span class="badge-tag failed" title="${errTooltip}">❌ Failed</span>`;
+    } else {
+      statusHtml = `<span class="badge-tag">${escapeHtml(t.status)}</span>`;
+    }
+
+    // Actions column rendering
+    let actionsHtml = "";
+    if (isProcessing) {
+      actionsHtml = `<span class="text-muted" style="font-size:0.75rem; font-weight:500;">Active</span>`;
+    } else if (t.status === "completed") {
+      actionsHtml = `
+        <div style="display:flex; gap:4px; align-items:center;">
+          <button class="btn btn-sm btn-secondary" onclick="openResultsModal('${escapeHtml(t.file_path)}')" title="View Analysis Results">👁️ View</button>
+          <button class="btn btn-sm btn-danger-outline" onclick="removeQueueItem('${t.id}')" title="Remove from queue list" style="padding:2px 6px;">✕</button>
+        </div>
+      `;
+    } else {
+      // queued or failed
+      actionsHtml = `
+        <button class="btn btn-sm btn-danger-outline" onclick="removeQueueItem('${t.id}')" title="Remove video from queue">✕ Remove</button>
+      `;
+    }
+
+    return `
+      <tr ${rowClass}>
+        <td style="font-weight:600; color:${isProcessing ? '#38bdf8' : 'var(--text-muted)'}; font-size:0.85rem;">
+          ${isProcessing ? '▶' : (idx + 1)}
+        </td>
+        <td>
+          <div style="font-weight:600; color:var(--text-main); font-size:0.9rem;">
+            ${escapeHtml(t.filename)}
+          </div>
+          <div style="font-size:0.75rem; color:#94a3b8; word-break:break-all;" title="${escapeHtml(t.file_path)}">
+            ${escapeHtml(parentPath)}
+          </div>
+        </td>
+        <td>
+          <span class="badge-tag" style="background:rgba(30,41,59,0.7); color:#cbd5e1; border:1px solid rgba(148,163,184,0.2); font-size:0.75rem;" title="${escapeHtml(parentPath)}">
+            📁 ${escapeHtml(folderName || "root")}
+          </span>
+        </td>
+        <td>${statusHtml}</td>
+        <td>${actionsHtml}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+window.removeQueueItem = async function(taskId) {
+  try {
+    const res = await fetch(`/api/queue/item/${taskId}`, { method: "DELETE" });
+    if (res.ok) {
+      showToast("Removed video from queue", "info");
+      await pollStatus();
+    } else {
+      const err = await res.json();
+      alert(`Cannot remove: ${err.detail || "Error"}`);
+    }
+  } catch (e) {
+    console.error("Failed to remove queue item:", e);
+    alert("Failed to remove queue item: " + e.message);
+  }
+};
+
 // --- Status Polling ---
 async function pollStatus() {
   try {
@@ -574,6 +712,9 @@ async function pollStatus() {
 
     // Render logs
     renderLogs(data.recent_logs || []);
+
+    // Render Queue Table
+    renderQueueTable(data.tasks || [], data.current_task);
 
     // Mode A: Update scanned videos status dynamically and render latest completed result
     if (data.tasks && data.tasks.length > 0) {
@@ -1045,6 +1186,19 @@ function initQueueControls() {
     pollStatus();
   });
 
+  const btnQueueStop = document.getElementById("btn-queue-stop");
+  if (btnQueueStop) {
+    btnQueueStop.addEventListener("click", async () => {
+      try {
+        await fetch("/api/queue/stop", { method: "POST" });
+        showToast("Processing stopped", "info");
+        pollStatus();
+      } catch (e) {
+        console.error("Error stopping queue:", e);
+      }
+    });
+  }
+
   const btnClearCompleted = document.getElementById("btn-queue-clear-completed");
   if (btnClearCompleted) {
     btnClearCompleted.addEventListener("click", async () => {
@@ -1059,6 +1213,58 @@ function initQueueControls() {
       pollStatus();
     }
   });
+
+  const btnClearPage = document.getElementById("btn-clear-page");
+  if (btnClearPage) {
+    btnClearPage.addEventListener("click", async () => {
+      if (!confirm("Clear full page? This will clear the processing queue, discovered clips list, and reset staging.")) {
+        return;
+      }
+      try {
+        await fetch("/api/queue/clear", { method: "POST" });
+        await fetch("/api/queue/clear-completed", { method: "POST" });
+        
+        scannedVideos = [];
+        renderScannedTable();
+
+        const folderInput = document.getElementById("scan-folder-path");
+        if (folderInput) folderInput.value = "";
+
+        const modeAStatus = document.getElementById("mode-a-drop-status");
+        if (modeAStatus) {
+          modeAStatus.textContent = "";
+          modeAStatus.classList.add("hidden");
+        }
+
+        const latestCard = document.getElementById("section-latest-result");
+        if (latestCard) latestCard.classList.add("hidden");
+
+        const taskNameEl = document.getElementById("current-task-name");
+        if (taskNameEl) taskNameEl.textContent = "No active file";
+        const taskStageEl = document.getElementById("current-task-stage");
+        if (taskStageEl) taskStageEl.textContent = "Ready";
+        const barEl = document.getElementById("progress-bar-fill");
+        if (barEl) barEl.style.width = "0%";
+
+        await pollStatus();
+        showToast("Full page and queue cleared", "info");
+      } catch (e) {
+        console.error("Error clearing page:", e);
+      }
+    });
+  }
+
+  const btnQueueAddFiles = document.getElementById("btn-queue-add-files");
+  if (btnQueueAddFiles) {
+    btnQueueAddFiles.addEventListener("click", () => {
+      const btnBrowseFiles = document.getElementById("btn-browse-files");
+      if (btnBrowseFiles) {
+        btnBrowseFiles.click();
+      } else {
+        openFsBrowser("files");
+      }
+    });
+  }
 
   // Batch AI Guidance Presets & Actions
   const presetMap = {
@@ -1092,6 +1298,40 @@ function initQueueControls() {
       }
     });
   });
+
+  const btnSaveGuidance = document.getElementById("btn-save-queue-guidance");
+  if (btnSaveGuidance) {
+    btnSaveGuidance.addEventListener("click", async () => {
+      const guidanceEl = document.getElementById("queue-prompt-guidance");
+      const val = guidanceEl ? guidanceEl.value.trim() : "";
+      btnSaveGuidance.disabled = true;
+      const origText = btnSaveGuidance.innerHTML;
+      btnSaveGuidance.innerHTML = "💾 Saving...";
+      try {
+        const res = await fetch("/api/queue/prompt-guidance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt_guidance: val })
+        });
+        if (res.ok) {
+          btnSaveGuidance.innerHTML = "✅ Saved!";
+          showToast("Prompt guidance saved and applied to queue!", "success");
+          setTimeout(() => {
+            btnSaveGuidance.innerHTML = origText;
+            btnSaveGuidance.disabled = false;
+          }, 1800);
+        } else {
+          btnSaveGuidance.innerHTML = origText;
+          btnSaveGuidance.disabled = false;
+          alert("Failed to save guidance");
+        }
+      } catch (e) {
+        console.error("Failed to save guidance:", e);
+        btnSaveGuidance.innerHTML = origText;
+        btnSaveGuidance.disabled = false;
+      }
+    });
+  }
 
   const btnClearGuidance = document.getElementById("btn-clear-queue-guidance");
   if (btnClearGuidance) {
