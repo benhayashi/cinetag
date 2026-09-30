@@ -252,7 +252,6 @@ class QueueManager:
                     self.log(f"Extracting audio for {video_path.name}...", task_id=task.id)
                     wav_path = extract_audio(video_path, custom_ffmpeg=cfg.ffmpeg_path)
                     if wav_path:
-                        self.log(f"Transcribing audio with Whisper ({cfg.whisper_model})...", task_id=task.id)
                         whisper_svc = WhisperTranscriptionService(
                             backend=cfg.whisper_backend,
                             model_name=cfg.whisper_model,
@@ -260,11 +259,22 @@ class QueueManager:
                             language=cfg.whisper_language,
                             api_key=getattr(cfg, "whisper_api_key", None)
                         )
+                        avail = whisper_svc.is_available()
+                        if cfg.whisper_backend == "faster-whisper" and not avail.get("faster_whisper"):
+                            self.log("⚠️ Local Whisper engine (faster-whisper) is not installed in the Python environment. Audio transcription skipped. (You can install it in Settings > Audio & Whisper).", level="warning", task_id=task.id)
+                            return
+                        elif cfg.whisper_backend == "openai-whisper" and not avail.get("openai_whisper"):
+                            self.log("⚠️ openai-whisper library is not installed in Python. Audio transcription skipped.", level="warning", task_id=task.id)
+                            return
+
+                        self.log(f"Transcribing audio with Whisper ({whisper_svc.model_name})...", task_id=task.id)
                         det_res = whisper_svc.transcribe_detailed(wav_path)
                         transcript = det_res.get("text")
                         transcript_segments = det_res.get("segments", [])
                         if transcript:
                             self.log(f"Audio transcription complete: \"{transcript[:80]}...\"", task_id=task.id)
+                        else:
+                            self.log("Whisper finished: No spoken dialogue detected in audio clip.", task_id=task.id)
                 except Exception as e:
                     self.log(f"Audio transcription note for {video_path.name}: {e}", level="warning", task_id=task.id)
 

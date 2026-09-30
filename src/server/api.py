@@ -895,6 +895,22 @@ def check_whisper():
     )
     return svc.is_available()
 
+@router.post("/whisper/install")
+def install_whisper_engine():
+    """Install faster-whisper into the active Python virtual environment."""
+    import sys
+    import subprocess
+    try:
+        cmd = [sys.executable, "-m", "pip", "install", "faster-whisper>=1.0.0"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if proc.returncode != 0:
+            err = proc.stderr or proc.stdout or "Installation failed"
+            raise RuntimeError(err[-500:])
+        return {"status": "success", "message": "faster-whisper installed successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/whisper/test-remote")
 def probe_whisper_remote(req: WhisperRemoteProbeRequest):
     """Test connection to an OpenAI-compatible remote Whisper server."""

@@ -1397,13 +1397,39 @@ async function loadConfig() {
         const wData = await wRes.json();
         const pEl = document.getElementById("whisper-cache-path");
         if (pEl) pEl.textContent = wData.models_dir || "Self-contained";
+
+        const statusText = document.getElementById("whisper-engine-status-text");
+        const installBtn = document.getElementById("btn-install-whisper");
+        const statusBanner = document.getElementById("whisper-engine-status-banner");
+
+        if (wData.faster_whisper) {
+          if (statusText) statusText.innerHTML = `✅ <strong>Local Engine Installed</strong>: <code>faster-whisper</code> is ready for offline speech recognition.`;
+          if (statusBanner) {
+            statusBanner.style.borderColor = "rgba(16, 185, 129, 0.4)";
+            statusBanner.style.background = "rgba(6, 78, 59, 0.3)";
+          }
+          if (installBtn) installBtn.classList.add("hidden");
+        } else {
+          if (statusText) statusText.innerHTML = `⚠️ <strong>faster-whisper is not installed</strong> in the Python environment.`;
+          if (statusBanner) {
+            statusBanner.style.borderColor = "rgba(245, 158, 11, 0.4)";
+            statusBanner.style.background = "rgba(120, 53, 15, 0.3)";
+          }
+          if (installBtn) {
+            installBtn.classList.remove("hidden");
+            installBtn.disabled = false;
+            installBtn.textContent = "⚡ Install faster-whisper Engine";
+          }
+        }
+
         const tagsEl = document.getElementById("whisper-downloaded-tags");
         if (tagsEl) {
           const dl = wData.downloaded_models || [];
           if (dl.length > 0) {
             tagsEl.innerHTML = `<span style="font-size:0.75rem;">Downloaded: </span>` + dl.map(m => `<span class="model-tag">${escapeHtml(m)}</span>`).join("");
           } else {
-            tagsEl.innerHTML = `<span style="font-size:0.75rem;" class="text-muted">No models downloaded yet (will download on first run)</span>`;
+            const hint = wData.faster_whisper ? "will download automatically on first run" : "install engine above first";
+            tagsEl.innerHTML = `<span style="font-size:0.75rem;" class="text-muted">No models cached yet (${hint})</span>`;
           }
         }
       }
@@ -1767,6 +1793,33 @@ function initSettings() {
       } finally {
         btnTestWhisper.disabled = false;
         btnTestWhisper.textContent = "⚡ Test Connection & Fetch Models";
+      }
+    });
+  }
+
+  // Wire In-App Whisper Engine Installation
+  const btnInstallWhisper = document.getElementById("btn-install-whisper");
+  if (btnInstallWhisper) {
+    btnInstallWhisper.addEventListener("click", async () => {
+      const statusText = document.getElementById("whisper-engine-status-text");
+      btnInstallWhisper.disabled = true;
+      btnInstallWhisper.textContent = "⏳ Installing...";
+      if (statusText) statusText.innerHTML = `⏳ Downloading and installing <code>faster-whisper</code> into Python environment... please wait 1-2 minutes.`;
+      try {
+        const res = await fetch("/api/whisper/install", { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          showToast("faster-whisper engine installed successfully!", "success");
+          loadConfig();
+        } else {
+          showToast("Failed to install faster-whisper: " + (data.detail || "Error"), "error");
+          btnInstallWhisper.disabled = false;
+          btnInstallWhisper.textContent = "⚡ Retry Installation";
+        }
+      } catch (err) {
+        showToast("Error installing faster-whisper: " + err.message, "error");
+        btnInstallWhisper.disabled = false;
+        btnInstallWhisper.textContent = "⚡ Retry Installation";
       }
     });
   }

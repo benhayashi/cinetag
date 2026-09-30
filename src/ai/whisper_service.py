@@ -30,6 +30,19 @@ def normalize_whisper_urls(url: str) -> tuple[str, str]:
         base_url = clean
     return transcribe_url, base_url
 
+def normalize_whisper_model_name(name: Optional[str]) -> str:
+    """Normalize model identifiers like 'v3', 'large_v3' to official 'large-v3'."""
+    n = (name or "base").strip().lower()
+    if n in ("v3", "large_v3", "large-3"):
+        return "large-v3"
+    if n in ("v2", "large_v2", "large-2"):
+        return "large-v2"
+    if n in ("v1", "large_v1", "large-1"):
+        return "large-v1"
+    if n in ("turbo", "large-turbo", "large_turbo"):
+        return "large-v3-turbo"
+    return n
+
 class WhisperTranscriptionService:
     """Modular speech-to-text service supporting faster-whisper, standard whisper, and remote endpoints."""
 
@@ -43,7 +56,7 @@ class WhisperTranscriptionService:
         api_key: Optional[str] = None
     ):
         self.backend = backend
-        self.model_name = model_name
+        self.model_name = normalize_whisper_model_name(model_name)
         self.remote_url = remote_url
         self.language = language
         self.download_root = download_root or str(get_models_dir())
@@ -68,7 +81,14 @@ class WhisperTranscriptionService:
             pass
 
         models_dir = Path(self.download_root)
-        downloaded = [d.name for d in models_dir.iterdir() if d.is_dir()] if models_dir.exists() else []
+        downloaded = []
+        if models_dir.exists():
+            for d in models_dir.iterdir():
+                if d.is_dir():
+                    name = d.name
+                    if "models--" in name:
+                        name = name.split("--")[-1].replace("faster-whisper-", "")
+                    downloaded.append(name)
 
         return {
             "faster_whisper": has_faster_whisper,
@@ -78,7 +98,7 @@ class WhisperTranscriptionService:
             "has_api_key": bool(self.api_key),
             "preferred_backend": self.backend,
             "models_dir": str(models_dir),
-            "downloaded_models": downloaded
+            "downloaded_models": sorted(list(set(downloaded)))
         }
 
 
@@ -125,12 +145,26 @@ class WhisperTranscriptionService:
                     pass
 
                 logger.info(f"Loading faster-whisper model '{self.model_name}' on {device} ({compute_type}) into {self.download_root}...")
-                self._model_instance = WhisperModel(
-                    self.model_name,
-                    device=device,
-                    compute_type=compute_type,
-                    download_root=self.download_root
-                )
+                try:
+                    self._model_instance = WhisperModel(
+                        self.model_name,
+                        device=device,
+                        compute_type=compute_type,
+                        download_root=self.download_root
+                    )
+                except Exception as cuda_err:
+                    if device == "cuda":
+                        logger.warning(f"CUDA failed to load Whisper ({cuda_err}), falling back to CPU int8...")
+                        device = "cpu"
+                        compute_type = "int8"
+                        self._model_instance = WhisperModel(
+                            self.model_name,
+                            device=device,
+                            compute_type=compute_type,
+                            download_root=self.download_root
+                        )
+                    else:
+                        raise cuda_err
 
             segments, info = self._model_instance.transcribe(
                 str(audio_path),

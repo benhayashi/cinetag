@@ -141,3 +141,28 @@ def test_config_whisper_persistence(tmp_path, monkeypatch):
     assert loaded.whisper_remote_url == "http://truenas.local:9000"
     assert loaded.whisper_api_key == "test-key"
     assert loaded.whisper_model == "Systran/faster-whisper-large-v3"
+
+
+def test_normalize_whisper_model_name():
+    from src.ai.whisper_service import normalize_whisper_model_name
+    assert normalize_whisper_model_name("v3") == "large-v3"
+    assert normalize_whisper_model_name("large_v3") == "large-v3"
+    assert normalize_whisper_model_name("turbo") == "large-v3-turbo"
+    assert normalize_whisper_model_name("base") == "base"
+    assert normalize_whisper_model_name(None) == "base"
+
+
+def test_api_whisper_install_endpoint(monkeypatch):
+    from src.server.api import install_whisper_engine
+    import subprocess
+
+    class DummyProc:
+        returncode = 0
+        stdout = "Successfully installed"
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: DummyProc())
+    res = install_whisper_engine()
+    assert res["status"] == "success"
+    assert "installed successfully" in res["message"]
+
