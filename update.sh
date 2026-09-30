@@ -21,11 +21,22 @@ if ! command -v git &>/dev/null; then
 fi
 
 # 2. Pull latest release from repository
-echo "📥 Pulling latest updates from GitHub..."
-git pull --ff-only || {
-    echo "⚠️ Fast-forward pull failed. Attempting git pull..."
-    git pull
-}
+if [ ! -d ".git" ]; then
+    echo "ℹ️ No Git repository (.git) detected (folder was likely downloaded as a ZIP)."
+    echo "Connecting this folder to the official CineTag repository..."
+    git init
+    git remote add origin https://github.com/benhayashi/cinetag.git
+    git fetch origin main
+    git reset --hard origin/main
+    git branch -M main
+    git branch --set-upstream-to=origin/main main
+else
+    echo "📥 Pulling latest updates from GitHub..."
+    git pull --ff-only || {
+        echo "⚠️ Fast-forward pull failed. Attempting git pull..."
+        git pull
+    }
+fi
 
 # 3. Update virtual environment dependencies
 if [ -d ".venv" ]; then
