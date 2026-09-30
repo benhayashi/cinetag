@@ -9,6 +9,82 @@ from src.core.paths import get_history_path
 
 logger = logging.getLogger(__name__)
 
+NUMBER_WORDS_MAP = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+    "ten": "10", "eleven": "11", "twelve": "12", "thirteen": "13",
+    "fourteen": "14", "fifteen": "15", "sixteen": "16", "seventeen": "17",
+    "eighteen": "18", "nineteen": "19", "twenty": "20", "thirty": "30",
+    "forty": "40", "fifty": "50", "sixty": "60", "seventy": "70",
+    "eighty": "80", "ninety": "90",
+    "first": "1st", "second": "2nd", "third": "3rd", "fourth": "4th", "fifth": "5th"
+}
+
+def normalize_title_acronyms_and_numbers(text: str) -> str:
+    """
+    Replace written numbers with digits and common phrases with standard acronyms/abbreviations
+    to save character space in titles, labels, and filenames.
+    Examples:
+      - 'Three Boys Playing' -> '3 Boys Playing'
+      - '3-year-old girl' / 'three year old' -> '3yo girl'
+      - 'United States of America' -> 'USA'
+      - 'New York City' -> 'NYC'
+    """
+    if not text:
+        return text
+
+    res = text
+
+    # 1. Convert written number words to digits (case-insensitive with word boundaries)
+    for word, digit in NUMBER_WORDS_MAP.items():
+        res = re.sub(rf'\b{word}\b', digit, res, flags=re.IGNORECASE)
+
+    # 2. Convert age phrases: e.g. "3-year-old", "3 year old", "3 years old", "3 yrs old" -> "3yo"
+    res = re.sub(r'(?i)\b(\d+)\s*[-_ ]\s*years?[-_ ]\s*old\b', r'\1yo', res)
+    res = re.sub(r'(?i)\b(\d+)\s*[-_ ]\s*yrs?[-_ ]\s*old\b', r'\1yo', res)
+    res = re.sub(r'(?i)\b(\d+)\s*years?[-_ ]\s*old\b', r'\1yo', res)
+    res = re.sub(r'(?i)\b(\d+)\s*yrs?[-_ ]\s*old\b', r'\1yo', res)
+    res = re.sub(r'(?i)\b(\d+)\s*y[./]?o\.?\b', r'\1yo', res)
+
+    # 3. Convert common geographic & descriptive acronyms
+    res = re.sub(r'(?i)\bUnited States of America\b', 'USA', res)
+    res = re.sub(r'(?i)\bUnited States\b', 'USA', res)
+    res = re.sub(r'(?i)\bUnited Kingdom\b', 'UK', res)
+    res = re.sub(r'(?i)\bNew York City\b', 'NYC', res)
+    res = re.sub(r'(?i)\bLos Angeles\b', 'LA', res)
+    res = re.sub(r'(?i)\bSan Francisco\b', 'SF', res)
+
+    return res
+
+def truncate_at_word_boundary(text: str, max_length: int, delimiter: str = "_") -> str:
+    """
+    Truncate text up to max_length while breaking cleanly at word boundaries
+    (e.g. delimiters like '_', '-', or space), preventing titles from ending in half-words.
+    """
+    if not text or max_length <= 0 or len(text) <= max_length:
+        return text
+
+    chunk = text[:max_length]
+    # If the boundary character right at max_length in original text was a delimiter,
+    # chunk already cleanly ends on a whole word.
+    if len(text) > max_length and text[max_length] in (delimiter, "_", "-", " ", "."):
+        return chunk.rstrip(" ._-")
+
+    # Search backwards for the nearest delimiter in chunk
+    last_delim = -1
+    for d in (delimiter, "_", "-", " "):
+        pos = chunk.rfind(d)
+        if pos > last_delim:
+            last_delim = pos
+
+    # If a boundary delimiter was found at or after index 3 (or at least 25% of max_length),
+    # break at that word boundary.
+    if last_delim >= 3 or (max_length <= 10 and last_delim >= 1):
+        return chunk[:last_delim].rstrip(" ._-")
+
+    # Fallback to hard slice if no word boundary is found
+    return chunk.rstrip(" ._-")
+
 def sanitize_filename(name: str) -> str:
     """Sanitize string to be safe across Windows, Linux, and macOS filesystems."""
     # Replace illegal filesystem characters: / \ : * ? " < > |
@@ -17,9 +93,9 @@ def sanitize_filename(name: str) -> str:
     cleaned = re.sub(r'[\s_]+', "_", cleaned)
     # Strip leading/trailing dots or underscores
     cleaned = cleaned.strip(" ._-")
-    # Limit length
+    # Limit length at word boundary
     if len(cleaned) > 100:
-        cleaned = cleaned[:100].rstrip(" ._-")
+        cleaned = truncate_at_word_boundary(cleaned, 100)
     return cleaned or "unnamed_video"
 
 def extract_datetime_from_filename(name: str) -> Optional[datetime]:
@@ -199,13 +275,15 @@ def generate_suggested_name(
       {time_zulu} (HHMMSS UTC), {time_zulu_dashed} (HH-MM-SS UTC),
       {title}, {names}, {people}, {original}, {folder}, {collection}, {ai_slug}
     """
-    clean_title = sanitize_filename(ai_title)
+    normalized_title = normalize_title_acronyms_and_numbers(ai_title)
+    clean_title = sanitize_filename(normalized_title)
     if max_title_length > 0 and len(clean_title) > max_title_length:
-        clean_title = clean_title[:max_title_length].rstrip(" ._-")
+        clean_title = truncate_at_word_boundary(clean_title, max_title_length)
     clean_original = sanitize_filename(original_path.stem)
-    clean_slug = sanitize_filename(suggested_slug or ai_title)
+    normalized_slug = normalize_title_acronyms_and_numbers(suggested_slug or ai_title)
+    clean_slug = sanitize_filename(normalized_slug)
     if max_title_length > 0 and len(clean_slug) > max_title_length:
-        clean_slug = clean_slug[:max_title_length].rstrip(" ._-")
+        clean_slug = truncate_at_word_boundary(clean_slug, max_title_length)
     
     # Process recognized people names
     names_list = []

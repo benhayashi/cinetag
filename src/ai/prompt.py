@@ -30,7 +30,10 @@ Important Rules:
 3. In "objects", list prominent physical items, sports gear, equipment, instruments, tools, or vehicles (e.g. "tennis racket", "acoustic guitar", "bicycle", "skateboard", "camera").
 4. If key moments stand out as memorable or exciting, set "is_highlight": true.
 5. Keep the suggested_filename lowercase with underscores, without extension or dates.
-6. Output ONLY the raw JSON object, without introductory text or markdown formatting if possible.
+6. Number Formatting: ALWAYS use numeric digits (0-9) instead of written words for numbers and counts (e.g. use "3" instead of "three", "2" instead of "two", "5yo" instead of "five year old", "1st" instead of "first") across titles, summaries, tags, people/subject labels, and event descriptions to conserve character limits.
+7. Concise Acronyms & Abbreviations: Use common acronyms and abbreviations in titles and descriptions where applicable to save characters (e.g. "yo" for "year old" like "3yo boy", "USA" for "United States of America", "NYC" for "New York City", "UK", "bday" for "birthday", "Xmas" for "Christmas").
+8. Title Quality: Keep titles complete, descriptive, and concise (3-6 words). Ensure the title is a finished thought and NEVER ends abruptly or in the middle of a word.
+9. Output ONLY the raw JSON object, without introductory text or markdown formatting if possible.
 """
 DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
 
@@ -123,7 +126,12 @@ def parse_ai_response(raw_text: str, default_title: str = "Home Video") -> Video
     except Exception:
         # Fallback parser for non-JSON model output
         lines = clean_text.splitlines()
-        title = lines[0][:60] if lines else default_title
+        first_line = lines[0].strip() if lines else default_title
+        if len(first_line) > 60:
+            last_space = first_line[:60].rfind(" ")
+            title = first_line[:last_space].strip() if last_space > 10 else first_line[:60].strip()
+        else:
+            title = first_line
         events: List[TimestampEvent] = []
         for line in lines:
             ts_match = re.match(r'^(?:★\s*)?(\d{1,2}:\d{2}(?::\d{2})?)\s*[-—:]?\s*(.*)', line.strip())
