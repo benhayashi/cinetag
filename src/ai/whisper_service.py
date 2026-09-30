@@ -43,6 +43,31 @@ def normalize_whisper_model_name(name: Optional[str]) -> str:
         return "large-v3-turbo"
     return n
 
+def resolve_whisper_device_and_compute(requested_device: str = "auto", requested_compute: str = "auto") -> tuple[str, str]:
+    """Determine the optimal execution device and quantization precision."""
+    dev = (requested_device or "auto").strip().lower()
+    comp = (requested_compute or "auto").strip().lower()
+
+    has_cuda = False
+    try:
+        import ctranslate2
+        has_cuda = ctranslate2.get_cuda_device_count() > 0
+    except Exception:
+        try:
+            import torch
+            has_cuda = torch.cuda.is_available()
+        except Exception:
+            has_cuda = False
+
+    if dev == "cuda" or (dev == "auto" and has_cuda):
+        actual_device = "cuda"
+        actual_compute = "float16" if comp == "auto" else comp
+    else:
+        actual_device = "cpu"
+        actual_compute = "int8" if comp == "auto" else comp
+
+    return actual_device, actual_compute
+
 class WhisperTranscriptionService:
     """Modular speech-to-text service supporting faster-whisper, standard whisper, and remote endpoints."""
 
@@ -50,6 +75,8 @@ class WhisperTranscriptionService:
         self,
         backend: str = "faster-whisper",
         model_name: str = "base",
+        device: str = "auto",
+        compute_type: str = "auto",
         remote_url: Optional[str] = None,
         language: Optional[str] = None,
         download_root: Optional[str] = None,
@@ -57,6 +84,8 @@ class WhisperTranscriptionService:
     ):
         self.backend = backend
         self.model_name = normalize_whisper_model_name(model_name)
+        self.device = (device or "auto").strip().lower()
+        self.compute_type = (compute_type or "auto").strip().lower()
         self.remote_url = remote_url
         self.language = language
         self.download_root = download_root or str(get_models_dir())
@@ -64,10 +93,15 @@ class WhisperTranscriptionService:
         self._model_instance = None
 
     def is_available(self) -> Dict[str, Any]:
-        """Check which Whisper implementations are available in the current environment."""
+        """Check which Whisper implementations and hardware acceleration devices are available."""
         has_faster_whisper = False
         has_openai_whisper = False
-        
+        has_cuda = False
+        cuda_count = 0
+        cuda_device_name = None
+        supported_compute_types_cpu = []
+        supported_compute_types_cuda = []
+
         try:
             import faster_whisper # type: ignore
             has_faster_whisper = True
@@ -78,6 +112,34 @@ class WhisperTranscriptionService:
             import whisper # type: ignore
             has_openai_whisper = True
         except ImportError:
+            pass
+
+        try:
+            import ctranslate2
+            cuda_count = ctranslate2.get_cuda_device_count()
+            has_cuda = cuda_count > 0
+            try:
+                supported_compute_types_cpu = sorted(list(ctranslate2.get_supported_compute_types("cpu")))
+            except Exception:
+                supported_compute_types_cpu = ["int8", "float32"]
+            if has_cuda:
+                try:
+                    supported_compute_types_cuda = sorted(list(ctranslate2.get_supported_compute_types("cuda")))
+                except Exception:
+                    supported_compute_types_cuda = ["float16", "int8"]
+        except Exception:
+            pass
+
+        try:
+            import torch
+            if torch.cuda.is_available():
+                has_cuda = True
+                cuda_count = max(cuda_count, torch.cuda.device_count())
+                try:
+                    cuda_device_name = torch.cuda.get_device_name(0)
+                except Exception:
+                    pass
+        except Exception:
             pass
 
         models_dir = Path(self.download_root)
@@ -93,6 +155,11 @@ class WhisperTranscriptionService:
         return {
             "faster_whisper": has_faster_whisper,
             "openai_whisper": has_openai_whisper,
+            "cuda_available": has_cuda,
+            "cuda_device_count": cuda_count,
+            "cuda_device_name": cuda_device_name,
+            "supported_compute_types_cpu": supported_compute_types_cpu,
+            "supported_compute_types_cuda": supported_compute_types_cuda,
             "remote": bool(self.remote_url),
             "remote_url": self.remote_url,
             "has_api_key": bool(self.api_key),
@@ -102,71 +169,68 @@ class WhisperTranscriptionService:
         }
 
 
-    def transcribe(self, audio_path: Path) -> Optional[str]:
+    def transcribe(self, audio_path: Path, log_callback=None) -> Optional[str]:
         """Transcribe audio file to text. Returns transcript or None."""
-        res = self.transcribe_detailed(audio_path)
+        res = self.transcribe_detailed(audio_path, log_callback=log_callback)
         return res.get("text") if res else None
 
-    def transcribe_detailed(self, audio_path: Path) -> Dict[str, Any]:
+    def transcribe_detailed(self, audio_path: Path, log_callback=None) -> Dict[str, Any]:
         """Transcribe audio file to text with timestamped segments for SRT export."""
         if not audio_path or not audio_path.exists() or audio_path.stat().st_size == 0:
             return {"text": None, "segments": []}
 
         if self.backend == "faster-whisper":
-            return self._transcribe_faster_whisper(audio_path)
+            return self._transcribe_faster_whisper(audio_path, log_callback=log_callback)
         elif self.backend == "openai-whisper":
-            return self._transcribe_openai_whisper(audio_path)
+            return self._transcribe_openai_whisper(audio_path, log_callback=log_callback)
         elif self.backend == "remote":
             return self._transcribe_remote(audio_path)
         else:
             avail = self.is_available()
             if avail["faster_whisper"]:
-                return self._transcribe_faster_whisper(audio_path)
+                return self._transcribe_faster_whisper(audio_path, log_callback=log_callback)
             elif avail["openai_whisper"]:
-                return self._transcribe_openai_whisper(audio_path)
+                return self._transcribe_openai_whisper(audio_path, log_callback=log_callback)
             elif self.remote_url:
                 return self._transcribe_remote(audio_path)
             else:
+                if log_callback:
+                    log_callback("⚠️ No Whisper backend installed in Python environment.", "warning")
                 logger.info("No Whisper backend installed. Skipping speech transcription.")
                 return {"text": None, "segments": []}
 
-    def _transcribe_faster_whisper(self, audio_path: Path) -> Dict[str, Any]:
-        try:
-            from faster_whisper import WhisperModel # type: ignore
-            if self._model_instance is None:
-                device = "cpu"
-                compute_type = "int8"
+    def _transcribe_faster_whisper(self, audio_path: Path, log_callback=None) -> Dict[str, Any]:
+        def log(msg: str, level: str = "info"):
+            if log_callback:
                 try:
-                    import torch # type: ignore
-                    if torch.cuda.is_available():
-                        device = "cuda"
-                        compute_type = "float16"
+                    log_callback(msg, level)
                 except Exception:
                     pass
+            if level == "warning":
+                logger.warning(msg)
+            elif level == "error":
+                logger.error(msg)
+            else:
+                logger.info(msg)
 
-                logger.info(f"Loading faster-whisper model '{self.model_name}' on {device} ({compute_type}) into {self.download_root}...")
-                try:
-                    self._model_instance = WhisperModel(
-                        self.model_name,
-                        device=device,
-                        compute_type=compute_type,
-                        download_root=self.download_root
-                    )
-                except Exception as cuda_err:
-                    if device == "cuda":
-                        logger.warning(f"CUDA failed to load Whisper ({cuda_err}), falling back to CPU int8...")
-                        device = "cpu"
-                        compute_type = "int8"
-                        self._model_instance = WhisperModel(
-                            self.model_name,
-                            device=device,
-                            compute_type=compute_type,
-                            download_root=self.download_root
-                        )
-                    else:
-                        raise cuda_err
+        try:
+            from faster_whisper import WhisperModel # type: ignore
+        except ImportError:
+            log("⚠️ faster-whisper package not installed. Skipping speech transcription.", level="warning")
+            return {"text": None, "segments": [], "error": "faster-whisper package not installed"}
 
-            segments, info = self._model_instance.transcribe(
+        target_device, target_compute = resolve_whisper_device_and_compute(self.device, self.compute_type)
+
+        def run_inference(dev: str, comp: str) -> tuple[str, list]:
+            log(f"[Whisper] Initializing model '{self.model_name}' on {dev.upper()} ({comp})...")
+            model = WhisperModel(
+                self.model_name,
+                device=dev,
+                compute_type=comp,
+                download_root=self.download_root
+            )
+            log(f"[Whisper] Starting audio transcription on {dev.upper()}...")
+            segments, info = model.transcribe(
                 str(audio_path),
                 language=self.language,
                 beam_size=5
@@ -182,22 +246,38 @@ class WhisperTranscriptionService:
                         "end": float(segment.end),
                         "text": t
                     })
-            return {"text": " ".join(text_parts).strip(), "segments": seg_list}
-        except ImportError:
-            logger.warning("faster-whisper package not installed.")
-            return {"text": None, "segments": []}
-        except Exception as e:
-            logger.error(f"faster-whisper transcription failed: {e}")
-            return {"text": None, "segments": []}
+            full_text = " ".join(text_parts).strip()
+            log(f"[Whisper] Transcription completed on {dev.upper()}: {len(seg_list)} segments detected (audio duration: {info.duration:.1f}s, language: {info.language}).")
+            return full_text, seg_list
 
-    def _transcribe_openai_whisper(self, audio_path: Path) -> Dict[str, Any]:
+        try:
+            full_text, seg_list = run_inference(target_device, target_compute)
+            return {"text": full_text, "segments": seg_list}
+        except Exception as primary_err:
+            log(f"⚠️ Whisper error on {target_device.upper()} ({target_compute}): {primary_err}", level="warning")
+            if target_device == "cuda":
+                log("⚡ Automatically falling back to CPU execution (int8) for guaranteed compatibility...", level="info")
+                try:
+                    full_text, seg_list = run_inference("cpu", "int8")
+                    return {"text": full_text, "segments": seg_list}
+                except Exception as cpu_err:
+                    log(f"❌ CPU fallback transcription also failed: {cpu_err}", level="error")
+                    return {"text": None, "segments": [], "error": f"GPU: {primary_err} | CPU: {cpu_err}"}
+            else:
+                return {"text": None, "segments": [], "error": str(primary_err)}
+
+    def _transcribe_openai_whisper(self, audio_path: Path, log_callback=None) -> Dict[str, Any]:
         try:
             import whisper # type: ignore
             if self._model_instance is None:
-                logger.info(f"Loading openai-whisper model '{self.model_name}'...")
+                if log_callback:
+                    log_callback(f"[Whisper] Loading openai-whisper model '{self.model_name}'...")
                 self._model_instance = whisper.load_model(self.model_name)
 
+            if log_callback:
+                log_callback(f"[Whisper] Transcribing audio with openai-whisper...")
             result = self._model_instance.transcribe(str(audio_path), language=self.language)
+
             raw_text = result.get("text", "").strip()
             seg_list = []
             for s in result.get("segments", []):

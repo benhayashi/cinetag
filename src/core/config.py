@@ -43,6 +43,8 @@ class AppConfig(BaseModel):
     whisper_remote_url: Optional[str] = None
     whisper_api_key: Optional[str] = Field(default="", description="API key or Bearer token for remote Whisper server")
     whisper_language: Optional[str] = None
+    whisper_device: str = Field(default="auto", description="auto | cuda | cpu")
+    whisper_compute_type: str = Field(default="auto", description="auto | float16 | int8 | int8_float16 | float32")
 
     # Subtitle Ingestion & Context
     use_subtitles: bool = Field(default=True, description="Use accompanying .srt or embedded subtitles as AI context")

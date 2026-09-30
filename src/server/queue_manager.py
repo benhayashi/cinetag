@@ -255,6 +255,8 @@ class QueueManager:
                         whisper_svc = WhisperTranscriptionService(
                             backend=cfg.whisper_backend,
                             model_name=cfg.whisper_model,
+                            device=getattr(cfg, "whisper_device", "auto"),
+                            compute_type=getattr(cfg, "whisper_compute_type", "auto"),
                             remote_url=cfg.whisper_remote_url,
                             language=cfg.whisper_language,
                             api_key=getattr(cfg, "whisper_api_key", None)
@@ -267,13 +269,18 @@ class QueueManager:
                             self.log("⚠️ openai-whisper library is not installed in Python. Audio transcription skipped.", level="warning", task_id=task.id)
                             return
 
-                        self.log(f"Transcribing audio with Whisper ({whisper_svc.model_name})...", task_id=task.id)
-                        det_res = whisper_svc.transcribe_detailed(wav_path)
+                        det_res = whisper_svc.transcribe_detailed(
+                            wav_path,
+                            log_callback=lambda msg, level="info": self.log(msg, level=level, task_id=task.id)
+                        )
                         transcript = det_res.get("text")
                         transcript_segments = det_res.get("segments", [])
+                        if det_res.get("error"):
+                            self.log(f"⚠️ Whisper error details: {det_res['error']}", level="warning", task_id=task.id)
+
                         if transcript:
                             self.log(f"Audio transcription complete: \"{transcript[:80]}...\"", task_id=task.id)
-                        else:
+                        elif not det_res.get("error"):
                             self.log("Whisper finished: No spoken dialogue detected in audio clip.", task_id=task.id)
                 except Exception as e:
                     self.log(f"Audio transcription note for {video_path.name}: {e}", level="warning", task_id=task.id)

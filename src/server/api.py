@@ -890,6 +890,8 @@ def check_whisper():
     svc = WhisperTranscriptionService(
         backend=cfg.whisper_backend,
         model_name=cfg.whisper_model,
+        device=getattr(cfg, "whisper_device", "auto"),
+        compute_type=getattr(cfg, "whisper_compute_type", "auto"),
         remote_url=cfg.whisper_remote_url,
         api_key=getattr(cfg, "whisper_api_key", None)
     )

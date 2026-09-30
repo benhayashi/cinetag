@@ -911,6 +911,32 @@
               <small class="text-muted" style="font-size: 0.75rem;">Downloaded and cached locally on this machine.</small>
             </div>
 
+            <div class="form-grid mt-2">
+              <div class="form-group">
+                <label for="cfg-whisper-device" style="font-weight: 600;">Acceleration Device</label>
+                <select id="cfg-whisper-device" class="form-control">
+                  <option value="auto">Auto (GPU with CPU Fallback)</option>
+                  <option value="cuda">NVIDIA GPU (CUDA)</option>
+                  <option value="cpu">CPU Only (Safe Fallback)</option>
+                </select>
+                <small class="text-muted" style="font-size: 0.75rem;">Auto uses your NVIDIA GPU if available and seamlessly falls back to CPU if drivers mismatch.</small>
+              </div>
+
+              <div class="form-group">
+                <label for="cfg-whisper-compute-type" style="font-weight: 600;">Compute Precision</label>
+                <select id="cfg-whisper-compute-type" class="form-control">
+                  <option value="auto">Auto (FP16 on GPU, INT8 on CPU)</option>
+                  <option value="float16">FP16 (float16 - Recommended for RTX)</option>
+                  <option value="int8">INT8 (Fastest, low memory)</option>
+                  <option value="int8_float16">INT8 / FP16 Mixed</option>
+                  <option value="float32">FP32 (float32 - Max precision)</option>
+                </select>
+                <small class="text-muted" style="font-size: 0.75rem;">FP16 is optimal for RTX 30/40/50 series GPUs.</small>
+              </div>
+            </div>
+
+            <div id="whisper-gpu-status" class="mt-2 text-muted" style="font-size: 0.75rem; display: none;"></div>
+
             <div class="mt-2 text-muted" style="font-size:0.8rem;">
               <span>Whisper Models Cache: </span><code id="whisper-cache-path" style="background:#1e293b; padding:2px 6px; border-radius:4px; color:#38bdf8;">Loading...</code>
               <div id="whisper-downloaded-tags" class="mt-1"></div>

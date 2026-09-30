@@ -166,3 +166,77 @@ def test_api_whisper_install_endpoint(monkeypatch):
     assert res["status"] == "success"
     assert "installed successfully" in res["message"]
 
+
+def test_resolve_whisper_device_and_compute():
+    from src.ai.whisper_service import resolve_whisper_device_and_compute
+
+    dev, comp = resolve_whisper_device_and_compute(requested_device="cpu", requested_compute="int8")
+    assert dev == "cpu"
+    assert comp == "int8"
+
+    dev, comp = resolve_whisper_device_and_compute(requested_device="cuda", requested_compute="float16")
+    assert dev == "cuda"
+    assert comp == "float16"
+
+
+def test_faster_whisper_cuda_fallback_to_cpu(tmp_path, monkeypatch):
+    from src.ai.whisper_service import WhisperTranscriptionService
+    import wave
+
+    wav_file = tmp_path / "speech.wav"
+    with wave.open(str(wav_file), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"\x00\x00" * 1600)
+
+    logs = []
+    def log_cb(msg, level="info"):
+        logs.append((level, msg))
+
+    call_count = {"cuda": 0, "cpu": 0}
+
+    class MockSegment:
+        def __init__(self, text, start, end):
+            self.text = text
+            self.start = start
+            self.end = end
+
+    class MockInfo:
+        duration = 10.0
+        language = "en"
+
+    class MockModel:
+        def __init__(self, model_name, device, compute_type, **kwargs):
+            self.device = device
+            self.compute_type = compute_type
+
+        def transcribe(self, path, **kwargs):
+            if self.device == "cuda":
+                call_count["cuda"] += 1
+                raise RuntimeError("CUDA out of memory or cuBLAS DLL missing")
+            else:
+                call_count["cpu"] += 1
+                return [MockSegment("Hello from CPU fallback", 0.0, 2.5)], MockInfo()
+
+    monkeypatch.setattr("faster_whisper.WhisperModel", MockModel)
+
+    svc = WhisperTranscriptionService(
+        backend="faster-whisper",
+        model_name="base",
+        device="cuda",
+        compute_type="float16"
+    )
+
+    det_res = svc.transcribe_detailed(wav_file, log_callback=log_cb)
+
+    assert call_count["cuda"] == 1
+    assert call_count["cpu"] == 1
+    assert det_res["text"] == "Hello from CPU fallback"
+    assert len(det_res["segments"]) == 1
+
+    log_messages = [m[1] for m in logs]
+    assert any("CUDA error" in m or "CUDA" in m for m in log_messages)
+    assert any("falling back to CPU" in m for m in log_messages)
+
+

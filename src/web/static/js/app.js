@@ -1254,6 +1254,12 @@ async function loadConfig() {
     const whisperLocalModelEl = document.getElementById("cfg-whisper-model");
     if (whisperLocalModelEl) whisperLocalModelEl.value = cfg.whisper_model || "base";
 
+    const whisperDeviceEl = document.getElementById("cfg-whisper-device");
+    if (whisperDeviceEl) whisperDeviceEl.value = cfg.whisper_device || "auto";
+
+    const whisperComputeEl = document.getElementById("cfg-whisper-compute-type");
+    if (whisperComputeEl) whisperComputeEl.value = cfg.whisper_compute_type || "auto";
+
     // Pipeline Execution Mode
     const pipeModeEl = document.getElementById("cfg-pipeline-execution-mode");
     if (pipeModeEl) pipeModeEl.value = cfg.processing_execution_mode || "serial";
@@ -1419,6 +1425,18 @@ async function loadConfig() {
             installBtn.classList.remove("hidden");
             installBtn.disabled = false;
             installBtn.textContent = "⚡ Install faster-whisper Engine";
+          }
+        }
+
+        const gpuStatusEl = document.getElementById("whisper-gpu-status");
+        if (gpuStatusEl) {
+          if (wData.cuda_available) {
+            const gpuName = wData.cuda_device_name ? ` (${wData.cuda_device_name})` : "";
+            gpuStatusEl.innerHTML = `🎮 <span style="color:#10b981; font-weight:600;">GPU Accelerated</span>: NVIDIA CUDA detected${gpuName}.`;
+            gpuStatusEl.style.display = "block";
+          } else {
+            gpuStatusEl.innerHTML = `💻 <span style="color:#94a3b8;">CPU Mode</span>: NVIDIA CUDA not detected. Whisper will use fast multi-threaded CPU inference.`;
+            gpuStatusEl.style.display = "block";
           }
         }
 
@@ -1639,6 +1657,8 @@ function initSettings() {
       whisper_model: (document.getElementById("cfg-whisper-backend")?.value === "remote")
         ? (document.getElementById("cfg-whisper-remote-model")?.value.trim() || "base")
         : (document.getElementById("cfg-whisper-model")?.value || "base"),
+      whisper_device: document.getElementById("cfg-whisper-device")?.value || "auto",
+      whisper_compute_type: document.getElementById("cfg-whisper-compute-type")?.value || "auto",
       face_recognition_enabled: document.getElementById("cfg-face-enabled")?.checked || false,
       face_provider: document.getElementById("cfg-face-provider")?.value || "builtin",
       face_detection_confidence: parseFloat(document.getElementById("cfg-face-confidence")?.value || "0.70"),
