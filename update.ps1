@@ -33,7 +33,16 @@ if (-not (Test-Path ".git")) {
     Write-Host ""
 } else {
     Write-Host "Pulling latest updates from GitHub..." -ForegroundColor Cyan
-    git pull
+    git remote add origin https://github.com/benhayashi/cinetag.git 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        git remote set-url origin https://github.com/benhayashi/cinetag.git
+    }
+    git fetch origin main
+    git branch -M main
+    git branch --set-upstream-to=origin/main main 2>$null
+    git reset --hard origin/main
+    Write-Host "Repository successfully updated!" -ForegroundColor Green
+    Write-Host ""
 }
 
 if (Test-Path ".venv\Scripts\Activate.ps1") {

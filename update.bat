@@ -36,13 +36,15 @@ goto check_venv
 
 :do_git_pull
 echo Pulling latest updates from GitHub...
-git pull
-if errorlevel 1 (
-    echo.
-    echo Warning: Standard git pull had an issue. Syncing with origin/main...
-    git fetch origin main
-    git merge origin/main
-)
+git remote add origin https://github.com/benhayashi/cinetag.git 2>nul || git remote set-url origin https://github.com/benhayashi/cinetag.git
+git fetch origin main
+if errorlevel 1 goto git_fail
+
+git branch -M main
+git branch --set-upstream-to=origin/main main 2>nul
+git reset --hard origin/main
+if errorlevel 1 goto git_fail
+echo Repository successfully updated!
 echo.
 
 :check_venv
