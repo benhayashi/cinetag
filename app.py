@@ -10,6 +10,9 @@ sys.path.insert(0, str(root_dir))
 
 from src.core.config import load_config
 from src.core.paths import find_binary, is_portable_mode, is_docker_mode
+from src.ai.whisper_service import patch_pyav_metadata_errors_if_needed
+
+patch_pyav_metadata_errors_if_needed()
 
 def main():
     parser = argparse.ArgumentParser(

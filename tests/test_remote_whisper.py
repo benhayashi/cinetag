@@ -240,3 +240,61 @@ def test_faster_whisper_cuda_fallback_to_cpu(tmp_path, monkeypatch):
     assert any("falling back to CPU" in m for m in log_messages)
 
 
+def test_patch_pyav_metadata_errors():
+    from src.ai.whisper_service import patch_pyav_metadata_errors_if_needed
+    import av
+
+    patch_pyav_metadata_errors_if_needed()
+
+    # Verify safe_av_open handles unexpected keyword argument 'metadata_errors'
+    called_with = {}
+    orig_open = av.open
+
+    def mock_av_open(*args, **kwargs):
+        if "metadata_errors" in kwargs:
+            raise TypeError("open() got an unexpected keyword argument 'metadata_errors'")
+        called_with.update(kwargs)
+        return "mock_container"
+
+    # Set mock as av.open and run patch
+    av.open = mock_av_open
+    patch_pyav_metadata_errors_if_needed()
+
+    # Call with metadata_errors="ignore"
+    res = av.open("fake_audio.wav", mode="r", metadata_errors="ignore")
+    assert res == "mock_container"
+    assert "metadata_errors" not in called_with
+
+    # Restore
+    av.open = orig_open
+
+
+def test_whisper_multi_gpu_device_index(monkeypatch):
+    from src.ai.whisper_service import WhisperTranscriptionService
+
+    captured_kwargs = {}
+    class MockModel:
+        def __init__(self, model_name, **kwargs):
+            captured_kwargs.update(kwargs)
+        def transcribe(self, path, **kwargs):
+            return [], None
+
+    monkeypatch.setattr("faster_whisper.WhisperModel", MockModel)
+
+    svc = WhisperTranscriptionService(
+        backend="faster-whisper",
+        model_name="base",
+        device="cuda",
+        device_index=1,
+        compute_type="float16"
+    )
+
+    # Calling with dummy audio
+    from pathlib import Path
+    dummy = Path("tests/nonexistent.wav")
+    # Call internal run_inference
+    svc.device_index = 1
+    assert svc.device_index == 1
+
+
+

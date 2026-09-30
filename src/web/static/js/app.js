@@ -1260,6 +1260,9 @@ async function loadConfig() {
     const whisperComputeEl = document.getElementById("cfg-whisper-compute-type");
     if (whisperComputeEl) whisperComputeEl.value = cfg.whisper_compute_type || "auto";
 
+    const whisperDeviceIndexEl = document.getElementById("cfg-whisper-device-index");
+    if (whisperDeviceIndexEl) whisperDeviceIndexEl.value = String(cfg.whisper_device_index || 0);
+
     // Pipeline Execution Mode
     const pipeModeEl = document.getElementById("cfg-pipeline-execution-mode");
     if (pipeModeEl) pipeModeEl.value = cfg.processing_execution_mode || "serial";
@@ -1438,6 +1441,16 @@ async function loadConfig() {
             gpuStatusEl.innerHTML = `💻 <span style="color:#94a3b8;">CPU Mode</span>: NVIDIA CUDA not detected. Whisper will use fast multi-threaded CPU inference.`;
             gpuStatusEl.style.display = "block";
           }
+        }
+
+        const devGrp = document.getElementById("group-whisper-device-index");
+        const devSel = document.getElementById("cfg-whisper-device-index");
+        if (devGrp && devSel && Array.isArray(wData.cuda_devices) && wData.cuda_devices.length > 1) {
+          devSel.innerHTML = wData.cuda_devices.map(d => `<option value="${d.index}">GPU ${d.index}: ${escapeHtml(d.name)}</option>`).join("");
+          devSel.value = String(cfg.whisper_device_index || 0);
+          devGrp.style.display = "block";
+        } else if (devGrp) {
+          devGrp.style.display = "none";
         }
 
         const tagsEl = document.getElementById("whisper-downloaded-tags");
@@ -1658,6 +1671,7 @@ function initSettings() {
         ? (document.getElementById("cfg-whisper-remote-model")?.value.trim() || "base")
         : (document.getElementById("cfg-whisper-model")?.value || "base"),
       whisper_device: document.getElementById("cfg-whisper-device")?.value || "auto",
+      whisper_device_index: parseInt(document.getElementById("cfg-whisper-device-index")?.value || "0", 10),
       whisper_compute_type: document.getElementById("cfg-whisper-compute-type")?.value || "auto",
       face_recognition_enabled: document.getElementById("cfg-face-enabled")?.checked || false,
       face_provider: document.getElementById("cfg-face-provider")?.value || "builtin",

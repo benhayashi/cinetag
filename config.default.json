@@ -20,6 +20,7 @@
   "whisper_remote_url": null,
   "whisper_language": null,
   "whisper_device": "auto",
+  "whisper_device_index": 0,
   "whisper_compute_type": "auto",
   "sampling_strategy": "periodic",
   "periodic_interval_seconds": 10,

@@ -43,6 +43,37 @@ def normalize_whisper_model_name(name: Optional[str]) -> str:
         return "large-v3-turbo"
     return n
 
+def patch_pyav_metadata_errors_if_needed():
+    """
+    PyAV removed the 'metadata_errors' parameter in recent releases (14+),
+    causing faster-whisper's decode_audio to crash with:
+    'open() got an unexpected keyword argument metadata_errors'.
+    This patch wraps av.open so that if metadata_errors is rejected, it retries without it.
+    """
+    try:
+        import av
+        orig_av_open = av.open
+        if getattr(orig_av_open, "_is_patched_for_metadata_errors", False):
+            return
+
+        def safe_av_open(*args, **kwargs):
+            try:
+                return orig_av_open(*args, **kwargs)
+            except TypeError as te:
+                if "metadata_errors" in str(te) and "metadata_errors" in kwargs:
+                    kwargs.pop("metadata_errors", None)
+                    return orig_av_open(*args, **kwargs)
+                raise
+
+        safe_av_open._is_patched_for_metadata_errors = True
+        av.open = safe_av_open
+        logger.debug("Successfully patched PyAV av.open for compatibility.")
+    except Exception as e:
+        logger.debug(f"PyAV patch skipped or failed: {e}")
+
+# Run patch on module import
+patch_pyav_metadata_errors_if_needed()
+
 def resolve_whisper_device_and_compute(requested_device: str = "auto", requested_compute: str = "auto") -> tuple[str, str]:
     """Determine the optimal execution device and quantization precision."""
     dev = (requested_device or "auto").strip().lower()
@@ -76,6 +107,7 @@ class WhisperTranscriptionService:
         backend: str = "faster-whisper",
         model_name: str = "base",
         device: str = "auto",
+        device_index: int = 0,
         compute_type: str = "auto",
         remote_url: Optional[str] = None,
         language: Optional[str] = None,
@@ -85,6 +117,7 @@ class WhisperTranscriptionService:
         self.backend = backend
         self.model_name = normalize_whisper_model_name(model_name)
         self.device = (device or "auto").strip().lower()
+        self.device_index = int(device_index or 0)
         self.compute_type = (compute_type or "auto").strip().lower()
         self.remote_url = remote_url
         self.language = language
@@ -99,6 +132,7 @@ class WhisperTranscriptionService:
         has_cuda = False
         cuda_count = 0
         cuda_device_name = None
+        cuda_devices = []
         supported_compute_types_cpu = []
         supported_compute_types_cuda = []
 
@@ -135,10 +169,11 @@ class WhisperTranscriptionService:
             if torch.cuda.is_available():
                 has_cuda = True
                 cuda_count = max(cuda_count, torch.cuda.device_count())
-                try:
-                    cuda_device_name = torch.cuda.get_device_name(0)
-                except Exception:
-                    pass
+                for i in range(torch.cuda.device_count()):
+                    dev_name = torch.cuda.get_device_name(i)
+                    cuda_devices.append({"index": i, "name": dev_name})
+                if cuda_devices:
+                    cuda_device_name = ", ".join(f"[{d['index']}] {d['name']}" for d in cuda_devices)
         except Exception:
             pass
 
@@ -158,6 +193,7 @@ class WhisperTranscriptionService:
             "cuda_available": has_cuda,
             "cuda_device_count": cuda_count,
             "cuda_device_name": cuda_device_name,
+            "cuda_devices": cuda_devices,
             "supported_compute_types_cpu": supported_compute_types_cpu,
             "supported_compute_types_cuda": supported_compute_types_cuda,
             "remote": bool(self.remote_url),
@@ -219,16 +255,23 @@ class WhisperTranscriptionService:
             log("⚠️ faster-whisper package not installed. Skipping speech transcription.", level="warning")
             return {"text": None, "segments": [], "error": "faster-whisper package not installed"}
 
+        patch_pyav_metadata_errors_if_needed()
         target_device, target_compute = resolve_whisper_device_and_compute(self.device, self.compute_type)
 
         def run_inference(dev: str, comp: str) -> tuple[str, list]:
-            log(f"[Whisper] Initializing model '{self.model_name}' on {dev.upper()} ({comp})...")
-            model = WhisperModel(
-                self.model_name,
-                device=dev,
-                compute_type=comp,
-                download_root=self.download_root
-            )
+            patch_pyav_metadata_errors_if_needed()
+            kwargs = {
+                "device": dev,
+                "compute_type": comp,
+                "download_root": self.download_root
+            }
+            if dev == "cuda" and self.device_index >= 0:
+                kwargs["device_index"] = self.device_index
+                log(f"[Whisper] Initializing model '{self.model_name}' on {dev.upper()} [GPU {self.device_index}] ({comp})...")
+            else:
+                log(f"[Whisper] Initializing model '{self.model_name}' on {dev.upper()} ({comp})...")
+
+            model = WhisperModel(self.model_name, **kwargs)
             log(f"[Whisper] Starting audio transcription on {dev.upper()}...")
             segments, info = model.transcribe(
                 str(audio_path),

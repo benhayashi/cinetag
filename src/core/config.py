@@ -44,6 +44,7 @@ class AppConfig(BaseModel):
     whisper_api_key: Optional[str] = Field(default="", description="API key or Bearer token for remote Whisper server")
     whisper_language: Optional[str] = None
     whisper_device: str = Field(default="auto", description="auto | cuda | cpu")
+    whisper_device_index: int = Field(default=0, description="NVIDIA GPU device index (0 for first GPU, 1 for second, etc.)")
     whisper_compute_type: str = Field(default="auto", description="auto | float16 | int8 | int8_float16 | float32")
 
     # Subtitle Ingestion & Context
