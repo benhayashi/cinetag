@@ -1727,11 +1727,11 @@ def get_video_results(file_path: str):
     )
 
     import urllib.parse
-    has_subtitles = bool(srt_p) or bool(audio_transcript)
+    has_subtitles = bool(srt_p) or bool(audio_transcript) or bool(events) or bool(summary)
     srt_download_url = None
     if srt_p:
         srt_download_url = f"/api/download?file_path={urllib.parse.quote(str(srt_p.resolve()))}"
-    elif audio_transcript:
+    elif audio_transcript or events or summary:
         srt_download_url = f"/api/download/srt?file_path={urllib.parse.quote(str(p.resolve()))}"
 
     return {
@@ -1823,9 +1823,11 @@ def download_srt(file_path: str):
                 media_type="text/plain; charset=utf-8"
             )
 
-    # If no srt on disk, extract transcript from .info.json
+    # If no srt on disk, extract transcript, events, or summary from .info.json
     json_candidates = [parent / f"{stem}.info.json", parent / f"{p.name}.info.json"]
     transcript = None
+    events = None
+    summary = None
     for cand in json_candidates:
         if cand.exists():
             try:
@@ -1833,24 +1835,33 @@ def download_srt(file_path: str):
                     data = json.load(f)
                     if isinstance(data.get("analysis"), dict):
                         transcript = data["analysis"].get("audio_transcript")
+                        events = data["analysis"].get("events")
+                        summary = data["analysis"].get("summary")
                     if not transcript:
                         transcript = data.get("audio_transcript")
-                    if transcript:
+                    if transcript or events or summary:
                         break
             except Exception:
                 pass
 
-    if not transcript:
+    if not transcript and not events and not summary:
         # Check active queue task
         task_match = next((t for t in manager.queue if t.file_path == str(p.resolve())), None)
         if task_match and task_match.result:
             transcript = task_match.result.get("audio_transcript")
+            events = task_match.result.get("events")
+            summary = task_match.result.get("summary")
 
-    if not transcript:
-        raise HTTPException(status_code=404, detail="No speech transcript available to generate .srt")
+    from src.media.subtitles import generate_srt_from_text, generate_srt_from_events
+    srt_content = ""
+    if transcript:
+        srt_content = generate_srt_from_text(transcript)
+    elif events or summary:
+        srt_content = generate_srt_from_events(events or [], summary=summary)
 
-    from src.media.subtitles import generate_srt_from_text
-    srt_content = generate_srt_from_text(transcript)
+    if not srt_content:
+        raise HTTPException(status_code=404, detail="No speech transcript or visual events available to generate .srt")
+
     from fastapi.responses import Response
     return Response(
         content=srt_content,

@@ -467,21 +467,30 @@ class QueueManager:
                 edl_p = write_edl_markers(video_path, analysis.events, conflict_mode=task.conflict_mode)
                 written_sidecars.append(str(edl_p))
 
-            # Auto-export full dialogue .srt subtitle sidecar if not already available
-            if getattr(cfg, "export_srt", True) and (transcript or subtitle_dialogue):
-                from src.media.subtitles import find_accompanying_srt, generate_srt_from_text, write_srt_sidecar
-                existing_srt = find_accompanying_srt(video_path)
-                if not existing_srt:
-                    raw_text = transcript or subtitle_dialogue or ""
+            # Auto-export full dialogue or visual events .srt subtitle sidecar
+            if getattr(cfg, "export_srt", True):
+                from src.media.subtitles import generate_srt_from_text, generate_srt_from_events, write_srt_sidecar
+                raw_text = transcript or subtitle_dialogue or ""
+                srt_body = ""
+                if raw_text.strip():
                     srt_body = generate_srt_from_text(
                         text=raw_text,
                         total_duration=meta.get("duration"),
                         segments=transcript_segments
                     )
-                    if srt_body.strip():
-                        srt_out = write_srt_sidecar(video_path, srt_body, conflict_mode=task.conflict_mode)
-                        written_sidecars.append(str(srt_out))
-                        self.log(f"Exported full dialogue subtitle sidecar: {srt_out.name}", task_id=task.id)
+
+                # Fallback to visual events or summary if no speech was detected
+                if not srt_body.strip():
+                    srt_body = generate_srt_from_events(
+                        events=analysis.events,
+                        total_duration=meta.get("duration"),
+                        summary=analysis.summary or analysis.title
+                    )
+
+                if srt_body.strip():
+                    srt_out = write_srt_sidecar(video_path, srt_body, conflict_mode=task.conflict_mode)
+                    written_sidecars.append(str(srt_out))
+                    self.log(f"Exported subtitle sidecar: {srt_out.name}", task_id=task.id)
 
             # 6. Optional In-file Tagging (Safe Mode)
             if cfg.enable_in_file_tagging:
@@ -536,6 +545,9 @@ class QueueManager:
                     task.filename = Path(final_path).name
                     video_path = Path(final_path)
                     self.log(f"Auto-renamed {old_name} -> {task.filename}", task_id=task.id)
+                    # Update written_sidecars paths to match renamed sidecar locations
+                    moved_map = {m["from"]: m["to"] for m in ren_res.get("sidecars_moved", [])}
+                    written_sidecars = [moved_map.get(s, s) for s in written_sidecars]
                 elif ren_res.get("status") == "skipped":
                     self.log(f"Auto-rename skipped for {video_path.name}: {ren_res.get('message', '')}", task_id=task.id)
 

@@ -26,6 +26,8 @@
   "export_txt": true,
   "export_info_json": true,
   "export_xmp": true,
+  "export_nfo": true,
+  "export_srt": true,
   "export_edl": false,
   "export_fcpxml": false,
   "rename_template": "{date}_{title}",

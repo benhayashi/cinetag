@@ -238,6 +238,64 @@ def generate_srt_from_text(
 
     return "\n\n".join(blocks) + "\n"
 
+def generate_srt_from_events(
+    events: List[Any],
+    total_duration: Optional[float] = None,
+    summary: Optional[str] = None
+) -> str:
+    """
+    Generate valid .srt subtitles from visual scene events or AI summary
+    when speech dialogue is not present.
+    """
+    blocks = []
+    idx = 1
+
+    def parse_timecode_to_seconds(tc: str) -> float:
+        parts = str(tc).strip().split(":")
+        try:
+            if len(parts) == 3:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+            elif len(parts) == 2:
+                return int(parts[0]) * 60 + float(parts[1])
+            elif len(parts) == 1:
+                return float(parts[0])
+        except Exception:
+            return 0.0
+        return 0.0
+
+    if events:
+        parsed_events = []
+        for ev in events:
+            desc = getattr(ev, "description", None) if hasattr(ev, "description") else (ev.get("description") if isinstance(ev, dict) else str(ev))
+            tc = getattr(ev, "timecode", "00:00") if hasattr(ev, "timecode") else (ev.get("timecode", "00:00") if isinstance(ev, dict) else "00:00")
+            if desc and str(desc).strip():
+                parsed_events.append((parse_timecode_to_seconds(tc), str(desc).strip()))
+
+        parsed_events.sort(key=lambda x: x[0])
+
+        for i, (start_s, desc) in enumerate(parsed_events):
+            if i + 1 < len(parsed_events):
+                next_start = parsed_events[i + 1][0]
+                end_s = min(next_start, start_s + 6.0)
+            else:
+                end_s = (total_duration if total_duration and total_duration > start_s + 1.0 else start_s + 5.0)
+
+            if end_s <= start_s:
+                end_s = start_s + 3.0
+
+            start_str = format_timestamp_srt(start_s)
+            end_str = format_timestamp_srt(end_s)
+            blocks.append(f"{idx}\n{start_str} --> {end_str}\n{desc}")
+            idx += 1
+
+    if not blocks and summary and summary.strip():
+        dur = total_duration if total_duration and total_duration > 3.0 else 10.0
+        start_str = format_timestamp_srt(0.0)
+        end_str = format_timestamp_srt(min(12.0, dur))
+        blocks.append(f"1\n{start_str} --> {end_str}\n{summary.strip()}")
+
+    return "\n\n".join(blocks) + "\n" if blocks else ""
+
 def write_srt_sidecar(
     video_path: Path,
     srt_content: str,
