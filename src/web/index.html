@@ -234,6 +234,40 @@
             </div>
           </div>
 
+          <!-- Batch AI Suggested Slug Naming Convention Bar -->
+          <div class="batch-guidance-bar" style="margin-top: 0.6rem; border-color: rgba(168, 85, 247, 0.4); background: rgba(30, 27, 75, 0.35);">
+            <div class="flex-between align-center mb-1" style="flex-wrap: wrap; gap: 0.5rem;">
+              <label for="queue-slug-guidance" style="font-weight: 600; font-size: 0.85rem; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem;">
+                <span>🏷️</span>
+                <span>AI Suggested Slug Naming Convention</span>
+                <span class="badge" style="background: rgba(168, 85, 247, 0.25); color: #c084fc; font-size: 0.7rem; border: 1px solid rgba(168, 85, 247, 0.4);">Tunes {ai_slug} Filename</span>
+              </label>
+              <div style="display: flex; gap: 0.4rem; align-items: center;">
+                <button type="button" id="btn-save-queue-slug-guidance" class="btn btn-sm btn-primary" style="font-size: 0.75rem; padding: 0.2rem 0.65rem; font-weight: 600; background: #9333ea; border-color: #a855f7;" title="Save and apply slug naming convention immediately to current batch queue">
+                  💾 Save Slug Guidance
+                </button>
+                <button type="button" id="btn-save-slug-guidance-as-default" class="btn btn-sm btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" title="Save current slug naming convention as persistent default in Settings">
+                  ⭐ Save as Default
+                </button>
+                <button type="button" id="btn-clear-queue-slug-guidance" class="btn btn-sm btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" title="Clear slug naming convention">
+                  ✕ Clear
+                </button>
+              </div>
+            </div>
+            <textarea id="queue-slug-guidance" class="form-control" rows="2" style="width: 100%; min-width: 100%; max-width: 100%; box-sizing: border-box; display: block; font-size: 0.85rem; resize: vertical; min-height: 60px;" placeholder="e.g. Format as: category_action_detail (e.g. travel_hiking_mountain_trail). Lowercase underscores only. Max 4 words. Keep under 30 characters."></textarea>
+            <div class="guidance-presets-bar">
+              <div class="guidance-presets-list">
+                <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">Quick Presets:</span>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-slug" data-preset="action">🏃 Category_Action</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-slug" data-preset="location">📍 Location_Activity</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-slug" data-preset="person">👤 Person_Event</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-slug" data-preset="scene">🎬 Project_Scene_Shot</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-preset-slug" data-preset="compact">⚡ Ultra-Compact</button>
+              </div>
+              <small class="text-muted" style="font-size: 0.75rem;">Instructs AI on exact naming style, prefixes, delimiters, and abbreviations when generating the <code>{ai_slug}</code>.</small>
+            </div>
+          </div>
+
           <div class="progress-box">
             <div class="progress-label">
               <span id="current-task-name">No active file</span>
@@ -749,9 +783,15 @@
           <p class="card-desc">Customize how Vision models analyze footage. Provide permanent archive guidance or modify the master system prompt used across Ollama, LM Studio, and Cloud backends.</p>
 
           <div class="form-group mt-2">
-            <label for="cfg-default-prompt-guidance" style="font-weight: 600;">Default Guidance & Archive Context (Permanent Addendum)</label>
+            <label for="cfg-default-prompt-guidance" style="font-weight: 600;">Default Description Guidance & Archive Context (Permanent Addendum)</label>
             <textarea id="cfg-default-prompt-guidance" class="form-control" rows="3" style="font-size: 0.85rem;" placeholder="e.g. Focus on family members, sports games, outdoor activities. Always mention camera perspective, landscape, and notable background objects."></textarea>
             <small class="helper-text">This guidance is automatically merged with any batch-specific focus prompt during queue processing.</small>
+          </div>
+
+          <div class="form-group mt-3">
+            <label for="cfg-default-slug-guidance" style="font-weight: 600; color: #c084fc;">🏷️ Default AI Slug Naming Convention ({ai_slug} Permanent Addendum)</label>
+            <textarea id="cfg-default-slug-guidance" class="form-control" rows="2" style="font-size: 0.85rem;" placeholder="e.g. Format as: category_action_detail (e.g. travel_hiking_mountain_trail). Lowercase underscores only. Max 4 words. Keep under 30 characters."></textarea>
+            <small class="helper-text">Instructs the AI model how to format, structure, and abbreviate the <code>{ai_slug}</code> for filename generation.</small>
           </div>
 
           <details class="mt-3" style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem;">

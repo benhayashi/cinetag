@@ -1068,6 +1068,7 @@ async function executeQueueAdd(filePaths, conflictMode, autoStart) {
     }
 
     let promptGuidance = document.getElementById("queue-prompt-guidance")?.value.trim() || undefined;
+    let slugGuidance = document.getElementById("queue-slug-guidance")?.value.trim() || undefined;
 
     const res = await fetch("/api/queue/add", {
       method: "POST",
@@ -1077,7 +1078,8 @@ async function executeQueueAdd(filePaths, conflictMode, autoStart) {
         conflict_mode: conflictMode,
         date_override: dateOverride,
         date_source: dateSource,
-        prompt_guidance: promptGuidance
+        prompt_guidance: promptGuidance,
+        slug_guidance: slugGuidance
       })
     });
     if (!res.ok) {
@@ -1382,6 +1384,116 @@ function initQueueControls() {
     };
     queueGuidanceEl.addEventListener("change", syncBatchGuidance);
   }
+
+  // Batch AI Suggested Slug Guidance Presets & Actions
+  const slugPresetMap = {
+    action: "Format as: [category]_[action]_[detail] (e.g. travel_hiking_mountain_trail). Lowercase underscores only. Keep under 30 characters.",
+    location: "Format as: [location]_[activity] (e.g. backyard_bbq_family). Concise, no filler words, max 4 words.",
+    person: "Format as: [person]_[event_or_activity] (e.g. emma_birthday_party). Use numeric digits for ages/counts (e.g. 5yo).",
+    scene: "Format as: [project]_[scene]_[shot] (e.g. vacation_beach_sunset). Short and punchy.",
+    compact: "Ultra-compact slug (max 3-4 words, max 25 characters, e.g. dog_fetch_frisbee)."
+  };
+
+  document.querySelectorAll(".btn-preset-slug").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const presetKey = btn.dataset.preset;
+      const text = slugPresetMap[presetKey];
+      const textarea = document.getElementById("queue-slug-guidance");
+      if (textarea && text) {
+        if (textarea.value.trim().length > 0) {
+          textarea.value = textarea.value.trim() + "\n" + text;
+        } else {
+          textarea.value = text;
+        }
+        autoResizeGuidance(textarea);
+        textarea.dispatchEvent(new Event("change"));
+      }
+    });
+  });
+
+  const btnSaveSlugGuidance = document.getElementById("btn-save-queue-slug-guidance");
+  if (btnSaveSlugGuidance) {
+    btnSaveSlugGuidance.addEventListener("click", async () => {
+      const slugEl = document.getElementById("queue-slug-guidance");
+      const val = slugEl ? slugEl.value.trim() : "";
+      btnSaveSlugGuidance.disabled = true;
+      const origText = btnSaveSlugGuidance.innerHTML;
+      btnSaveSlugGuidance.innerHTML = "💾 Saving...";
+      try {
+        const res = await fetch("/api/queue/slug-guidance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug_guidance: val })
+        });
+        if (res.ok) {
+          btnSaveSlugGuidance.innerHTML = "✅ Saved!";
+          showToast("AI slug naming guidance saved and applied to queue!", "success");
+          setTimeout(() => {
+            btnSaveSlugGuidance.innerHTML = origText;
+            btnSaveSlugGuidance.disabled = false;
+          }, 1800);
+        } else {
+          btnSaveSlugGuidance.innerHTML = origText;
+          btnSaveSlugGuidance.disabled = false;
+          alert("Failed to save slug guidance");
+        }
+      } catch (e) {
+        console.error("Failed to save slug guidance:", e);
+        btnSaveSlugGuidance.innerHTML = origText;
+        btnSaveSlugGuidance.disabled = false;
+      }
+    });
+  }
+
+  const btnClearSlugGuidance = document.getElementById("btn-clear-queue-slug-guidance");
+  if (btnClearSlugGuidance) {
+    btnClearSlugGuidance.addEventListener("click", () => {
+      const textarea = document.getElementById("queue-slug-guidance");
+      if (textarea) {
+        textarea.value = "";
+        autoResizeGuidance(textarea);
+        textarea.dispatchEvent(new Event("change"));
+      }
+    });
+  }
+
+  const btnSaveSlugGuidanceDefault = document.getElementById("btn-save-slug-guidance-as-default");
+  if (btnSaveSlugGuidanceDefault) {
+    btnSaveSlugGuidanceDefault.addEventListener("click", async () => {
+      const currentVal = document.getElementById("queue-slug-guidance")?.value.trim() || "";
+      const cfgSlugEl = document.getElementById("cfg-default-slug-guidance");
+      if (cfgSlugEl) cfgSlugEl.value = currentVal;
+      try {
+        await fetch("/api/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ default_slug_guidance: currentVal, batch_slug_guidance: currentVal })
+        });
+        showToast("Slug naming convention saved as persistent default in Settings!", "success");
+      } catch (e) {
+        console.error("Failed to save slug guidance as default:", e);
+      }
+    });
+  }
+
+  const queueSlugGuidanceEl = document.getElementById("queue-slug-guidance");
+  if (queueSlugGuidanceEl) {
+    autoResizeGuidance(queueSlugGuidanceEl);
+    queueSlugGuidanceEl.addEventListener("input", () => autoResizeGuidance(queueSlugGuidanceEl));
+
+    const syncBatchSlugGuidance = async () => {
+      try {
+        await fetch("/api/queue/slug-guidance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug_guidance: queueSlugGuidanceEl.value.trim() })
+        });
+      } catch (e) {
+        // silent fail
+      }
+    };
+    queueSlugGuidanceEl.addEventListener("change", syncBatchSlugGuidance);
+  }
 }
 
 // --- Settings & Connectors ---
@@ -1629,6 +1741,9 @@ async function loadConfig() {
     const defaultGuidanceEl = document.getElementById("cfg-default-prompt-guidance");
     if (defaultGuidanceEl) defaultGuidanceEl.value = cfg.default_prompt_guidance || "";
 
+    const defaultSlugGuidanceEl = document.getElementById("cfg-default-slug-guidance");
+    if (defaultSlugGuidanceEl) defaultSlugGuidanceEl.value = cfg.default_slug_guidance || "";
+
     const customSystemPromptEl = document.getElementById("cfg-custom-system-prompt");
     if (customSystemPromptEl) customSystemPromptEl.value = cfg.custom_system_prompt || "";
 
@@ -1641,6 +1756,14 @@ async function loadConfig() {
     }
     if (queueGuidanceEl) {
       queueGuidanceEl.dispatchEvent(new Event("input"));
+    }
+
+    const queueSlugGuidanceEl = document.getElementById("queue-slug-guidance");
+    if (queueSlugGuidanceEl && !queueSlugGuidanceEl.value) {
+      queueSlugGuidanceEl.value = cfg.batch_slug_guidance || "";
+    }
+    if (queueSlugGuidanceEl) {
+      queueSlugGuidanceEl.dispatchEvent(new Event("input"));
     }
 
     updateRenameSchemePreview();
@@ -1957,7 +2080,9 @@ function initSettings() {
       ai_timeout_seconds: parseInt(document.getElementById("cfg-ai-timeout")?.value || "600", 10),
       default_prompt_guidance: document.getElementById("cfg-default-prompt-guidance")?.value.trim() || "",
       custom_system_prompt: document.getElementById("cfg-custom-system-prompt")?.value.trim() || "",
-      batch_prompt_guidance: document.getElementById("queue-prompt-guidance")?.value.trim() || ""
+      batch_prompt_guidance: document.getElementById("queue-prompt-guidance")?.value.trim() || "",
+      default_slug_guidance: document.getElementById("cfg-default-slug-guidance")?.value.trim() || "",
+      batch_slug_guidance: document.getElementById("queue-slug-guidance")?.value.trim() || ""
     };
 
     try {

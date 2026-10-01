@@ -35,6 +35,8 @@ class AppConfig(BaseModel):
     custom_system_prompt: Optional[str] = Field(default=None, description="Custom system prompt override (None uses default)")
     default_prompt_guidance: str = Field(default="", description="Permanent guidance addendum included in all video descriptions (e.g. key family names, locations, tone)")
     batch_prompt_guidance: str = Field(default="", description="Active batch guidance prompt for current queue processing")
+    default_slug_guidance: str = Field(default="", description="Permanent naming convention guidance for AI suggested slug (e.g. category_action_detail, max 30 chars, lowercase underscores)")
+    batch_slug_guidance: str = Field(default="", description="Active batch naming convention guidance for AI suggested slug")
 
     # Whisper Audio Transcription & Subtitles
     transcribe_audio: bool = True

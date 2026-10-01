@@ -163,3 +163,61 @@ def test_ai_timeout_configuration_and_ollama_timeout():
         called_timeout = mock_client_cls.call_args[1]["timeout"]
         assert called_timeout.read == 600.0
 
+
+def test_build_user_prompt_with_slug_guidance():
+    slug_guide = "Format as [category]_[action]_[detail] in lowercase with underscores, max 30 characters."
+    prompt = build_user_prompt(
+        timestamps=["00:00"],
+        audio_transcript=None,
+        context=None,
+        subtitle_dialogue=None,
+        prompt_guidance="Family vacation",
+        slug_guidance=slug_guide
+    )
+    assert "=== AI Suggested Slug & Filename Naming Convention ===" in prompt
+    assert slug_guide in prompt
+    assert "suggested_filename" in prompt
+
+
+def test_api_queue_slug_guidance():
+    res = client.post("/api/queue/slug-guidance", json={"slug_guidance": "category_action_shot"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ok"
+    assert data["slug_guidance"] == "category_action_shot"
+
+    get_res = client.get("/api/queue/slug-guidance")
+    assert get_res.status_code == 200
+    get_data = get_res.json()
+    assert get_data["batch_slug_guidance"] == "category_action_shot"
+
+
+def test_api_config_with_slug_guidance(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEO_DESCRIBER_DATA_DIR", str(tmp_path))
+
+    default_slug = "category_action_detail"
+    batch_slug = "trip_location_shot"
+
+    post_res = client.post("/api/config", json={
+        "default_slug_guidance": default_slug,
+        "batch_slug_guidance": batch_slug
+    })
+    assert post_res.status_code == 200
+    cfg = post_res.json()["config"]
+    assert cfg["default_slug_guidance"] == default_slug
+    assert cfg["batch_slug_guidance"] == batch_slug
+
+
+def test_queue_add_with_slug_guidance(tmp_path):
+    video_file = tmp_path / "test_slug_clip.mp4"
+    video_file.write_bytes(b"dummy")
+
+    res = client.post("/api/queue/add", json={
+        "file_paths": [str(video_file)],
+        "prompt_guidance": "Vacation video",
+        "slug_guidance": "vacation_location_action"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["added_count"] == 1
+

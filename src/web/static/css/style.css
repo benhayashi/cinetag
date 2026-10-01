@@ -533,7 +533,9 @@ body {
   margin-top: 0.75rem;
 }
 
-.batch-guidance-bar textarea#queue-prompt-guidance {
+.batch-guidance-bar textarea,
+.batch-guidance-bar textarea#queue-prompt-guidance,
+.batch-guidance-bar textarea#queue-slug-guidance {
   width: 100% !important;
   max-width: 100% !important;
   min-width: 100% !important;
@@ -553,10 +555,16 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.batch-guidance-bar textarea#queue-prompt-guidance:focus {
+.batch-guidance-bar textarea:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+
+.batch-guidance-bar textarea#queue-slug-guidance:focus {
+  outline: none;
+  border-color: #a855f7;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25);
 }
 
 .guidance-presets-bar {

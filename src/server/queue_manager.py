@@ -41,6 +41,7 @@ class TaskItem(BaseModel):
     date_override: Optional[str] = None
     date_source: Optional[str] = None
     prompt_guidance: Optional[str] = None
+    slug_guidance: Optional[str] = None
 
 class QueueManager:
     """Manages background batch processing queue and worker thread."""
@@ -77,7 +78,8 @@ class QueueManager:
         conflict_mode: str = "overwrite",
         date_override: Optional[str] = None,
         date_source: Optional[str] = None,
-        prompt_guidance: Optional[str] = None
+        prompt_guidance: Optional[str] = None,
+        slug_guidance: Optional[str] = None
     ) -> List[TaskItem]:
         with self._lock:
             added = []
@@ -94,7 +96,8 @@ class QueueManager:
                         conflict_mode=conflict_mode,
                         date_override=date_override,
                         date_source=date_source,
-                        prompt_guidance=prompt_guidance
+                        prompt_guidance=prompt_guidance,
+                        slug_guidance=slug_guidance
                     )
                     self.queue.append(task)
                     added.append(task)
@@ -380,6 +383,21 @@ class QueueManager:
                     short_note = short_note[:57] + "..."
                 self.log(f"Applying AI guidance focus: \"{short_note}\"", task_id=task.id)
 
+            # Combine slug guidance: task slug guidance or batch slug guidance + default slug guidance
+            slug_notes = []
+            if getattr(cfg, "default_slug_guidance", None) and cfg.default_slug_guidance.strip():
+                slug_notes.append(cfg.default_slug_guidance.strip())
+            active_batch_slug = (getattr(task, "slug_guidance", None) or getattr(cfg, "batch_slug_guidance", None) or "").strip()
+            if active_batch_slug and active_batch_slug not in slug_notes:
+                slug_notes.append(active_batch_slug)
+
+            combined_slug_guidance = "\n\n".join(slug_notes) if slug_notes else None
+            if combined_slug_guidance:
+                short_slug = combined_slug_guidance.replace("\n", " ")
+                if len(short_slug) > 60:
+                    short_slug = short_slug[:57] + "..."
+                self.log(f"Applying AI slug naming convention: \"{short_slug}\"", task_id=task.id)
+
             timeout_sec = getattr(cfg, "ai_timeout_seconds", 600)
             analysis: VideoAnalysisResult
             if cfg.vision_provider == "ollama":
@@ -395,6 +413,7 @@ class QueueManager:
                     context_prompt=extra_ctx,
                     system_prompt=cfg.custom_system_prompt,
                     prompt_guidance=combined_guidance,
+                    slug_guidance=combined_slug_guidance,
                     timeout_seconds=timeout_sec,
                     num_ctx=ollama_ctx
                 )
@@ -410,6 +429,7 @@ class QueueManager:
                     context_prompt=extra_ctx,
                     system_prompt=cfg.custom_system_prompt,
                     prompt_guidance=combined_guidance,
+                    slug_guidance=combined_slug_guidance,
                     timeout_seconds=timeout_sec
                 )
             elif cfg.vision_provider == "cloud":
@@ -423,6 +443,7 @@ class QueueManager:
                     context_prompt=extra_ctx,
                     system_prompt=cfg.custom_system_prompt,
                     prompt_guidance=combined_guidance,
+                    slug_guidance=combined_slug_guidance,
                     timeout_seconds=timeout_sec
                 )
             else:

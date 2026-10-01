@@ -52,13 +52,14 @@ class OllamaVisionProvider(BaseVisionProvider):
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
         prompt_guidance: Optional[str] = None,
+        slug_guidance: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
         num_ctx: Optional[int] = None,
         **kwargs
     ) -> VideoAnalysisResult:
         chosen_model = model or self.default_model
         timestamps = [f.timecode for f in frames]
-        user_text = build_user_prompt(timestamps, audio_transcript, context_prompt, prompt_guidance=prompt_guidance)
+        user_text = build_user_prompt(timestamps, audio_transcript, context_prompt, prompt_guidance=prompt_guidance, slug_guidance=slug_guidance)
         active_system_prompt = get_system_prompt(system_prompt)
 
         # Encode frames as base64 strings

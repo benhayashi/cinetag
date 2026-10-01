@@ -48,6 +48,7 @@ class BaseVisionProvider(ABC):
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
         prompt_guidance: Optional[str] = None,
+        slug_guidance: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
         num_ctx: Optional[int] = None,
         **kwargs

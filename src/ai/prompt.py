@@ -48,7 +48,8 @@ def build_user_prompt(
     audio_transcript: Optional[str] = None,
     context: Optional[str] = None,
     subtitle_dialogue: Optional[str] = None,
-    prompt_guidance: Optional[str] = None
+    prompt_guidance: Optional[str] = None,
+    slug_guidance: Optional[str] = None
 ) -> str:
     parts = ["Here are the sampled video frames taken at timestamps: " + ", ".join(timestamps) + "."]
     
@@ -69,6 +70,15 @@ def build_user_prompt(
             + prompt_guidance.strip()
             + "\n\n(Important: Please prioritize identifying these specific individuals, locations, actions, and visual cues in the title, summary, people_or_subjects, tags, and events when observed.)"
             + "\n===================================================="
+        )
+
+    if slug_guidance and slug_guidance.strip():
+        parts.append(
+            "\n=== AI Suggested Slug & Filename Naming Convention ===\n"
+            + "Strict instruction for generating 'suggested_filename':\n"
+            + slug_guidance.strip()
+            + "\n(Make sure 'suggested_filename' strictly follows this naming convention, using lowercase and underscores, without file extension or date prefix unless explicitly specified.)"
+            + "\n======================================================="
         )
 
     parts.append("\nPlease output the JSON analysis according to the specified schema.")

@@ -63,9 +63,13 @@ class AddQueueRequest(BaseModel):
     date_override: Optional[str] = None
     date_source: Optional[str] = None
     prompt_guidance: Optional[str] = None
+    slug_guidance: Optional[str] = None
 
 class BatchPromptGuidanceRequest(BaseModel):
     prompt_guidance: str
+
+class BatchSlugGuidanceRequest(BaseModel):
+    slug_guidance: str
 
 class CheckConflictsRequest(BaseModel):
     file_paths: List[str]
@@ -187,7 +191,8 @@ def add_to_queue(req: AddQueueRequest):
         conflict_mode=req.conflict_mode,
         date_override=req.date_override,
         date_source=req.date_source,
-        prompt_guidance=req.prompt_guidance
+        prompt_guidance=req.prompt_guidance,
+        slug_guidance=req.slug_guidance
     )
     return {"status": "ok", "added_count": len(added)}
 
@@ -200,7 +205,9 @@ def get_prompt_defaults():
         "default_system_prompt": DEFAULT_SYSTEM_PROMPT,
         "custom_system_prompt": cfg.custom_system_prompt,
         "default_prompt_guidance": cfg.default_prompt_guidance,
-        "batch_prompt_guidance": cfg.batch_prompt_guidance
+        "batch_prompt_guidance": cfg.batch_prompt_guidance,
+        "default_slug_guidance": getattr(cfg, "default_slug_guidance", ""),
+        "batch_slug_guidance": getattr(cfg, "batch_slug_guidance", "")
     }
 
 @router.post("/queue/prompt-guidance")
@@ -210,13 +217,39 @@ def set_batch_prompt_guidance(req: BatchPromptGuidanceRequest):
     cfg.batch_prompt_guidance = req.prompt_guidance.strip()
     save_config(cfg)
     # Update pending tasks without custom guidance
-    for task in manager.queue:
-        if task.status == "queued" and not task.prompt_guidance:
-            task.prompt_guidance = req.prompt_guidance.strip()
+    with manager._lock:
+        for task in manager.queue:
+            if task.status == "queued" and not task.prompt_guidance:
+                task.prompt_guidance = req.prompt_guidance.strip()
     return {
         "status": "ok",
         "batch_prompt_guidance": cfg.batch_prompt_guidance,
         "prompt_guidance": cfg.batch_prompt_guidance
+    }
+
+@router.get("/queue/slug-guidance")
+def get_batch_slug_guidance():
+    """Return default and active batch slug guidance settings."""
+    cfg = load_config()
+    return {
+        "default_slug_guidance": getattr(cfg, "default_slug_guidance", ""),
+        "batch_slug_guidance": getattr(cfg, "batch_slug_guidance", "")
+    }
+
+@router.post("/queue/slug-guidance")
+def set_batch_slug_guidance(req: BatchSlugGuidanceRequest):
+    """Set active batch slug naming convention guidance for queue processing."""
+    cfg = load_config()
+    cfg.batch_slug_guidance = req.slug_guidance.strip()
+    save_config(cfg)
+    with manager._lock:
+        for task in manager.queue:
+            if task.status == "queued" and not getattr(task, "slug_guidance", None):
+                task.slug_guidance = req.slug_guidance.strip()
+    return {
+        "status": "ok",
+        "batch_slug_guidance": cfg.batch_slug_guidance,
+        "slug_guidance": cfg.batch_slug_guidance
     }
 
 def find_existing_sidecars(p: Path) -> List[str]:
