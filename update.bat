@@ -53,7 +53,7 @@ if not exist ".venv" goto venv_missing
 echo Updating Python dependencies in .venv...
 call .venv\Scripts\activate.bat
 python -m pip install --upgrade pip --quiet
-pip install -r requirements.txt --quiet
+pip install -r requirements.txt
 goto update_done
 
 :venv_missing

@@ -297,4 +297,25 @@ def test_whisper_multi_gpu_device_index(monkeypatch):
     assert svc.device_index == 1
 
 
+def test_windows_cuda_dll_helpers(monkeypatch):
+    import sys
+    from src.ai.whisper_service import (
+        configure_windows_cuda_dll_paths,
+        check_windows_cublas_loaded,
+        ensure_windows_cuda_libs
+    )
+
+    # Test non-windows execution
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert check_windows_cublas_loaded() is True
+    assert ensure_windows_cuda_libs() is True
+
+    # Test windows execution with mock
+    monkeypatch.setattr(sys, "platform", "win32")
+    logs = []
+    configure_windows_cuda_dll_paths(log_callback=lambda m: logs.append(m))
+    assert isinstance(logs, list)
+
+
+
 

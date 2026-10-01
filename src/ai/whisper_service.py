@@ -74,6 +74,146 @@ def patch_pyav_metadata_errors_if_needed():
 # Run patch on module import
 patch_pyav_metadata_errors_if_needed()
 
+_WINDOWS_DLL_HANDLES = []
+
+def configure_windows_cuda_dll_paths(log_callback=None):
+    """
+    On Windows with Python 3.8+, Windows DLL search path no longer checks PATH or site-packages by default.
+    faster-whisper (ctranslate2) requires CUDA 12 DLLs: cublas64_12.dll, cublasLt64_12.dll, cudnn64_9.dll.
+    Locate and register all directories containing NVIDIA CUDA DLLs via os.add_dll_directory() and PATH.
+    """
+    import sys
+    if sys.platform != "win32":
+        return
+
+    import os
+    from pathlib import Path
+    global _WINDOWS_DLL_HANDLES
+
+    candidate_dirs = set()
+
+    # 1. Search site-packages for nvidia packages and torch
+    for p in list(sys.path):
+        p_path = Path(p)
+        if not p_path.is_dir():
+            continue
+        nvidia_root = p_path / "nvidia"
+        if nvidia_root.is_dir():
+            try:
+                for sub in nvidia_root.iterdir():
+                    b_dir = sub / "bin"
+                    if b_dir.is_dir():
+                        candidate_dirs.add(b_dir.resolve())
+                    l_dir = sub / "lib"
+                    if l_dir.is_dir():
+                        candidate_dirs.add(l_dir.resolve())
+            except Exception:
+                pass
+
+        torch_lib = p_path / "torch" / "lib"
+        if torch_lib.is_dir():
+            candidate_dirs.add(torch_lib.resolve())
+
+    # 2. Search CUDA_PATH environment variables
+    for env_var in list(os.environ.keys()):
+        if env_var.startswith("CUDA_PATH"):
+            val = os.environ.get(env_var)
+            if val:
+                c_bin = Path(val) / "bin"
+                if c_bin.is_dir():
+                    candidate_dirs.add(c_bin.resolve())
+
+    # 3. Search standard Program Files NVIDIA locations
+    for pf_env in ("ProgramFiles", "ProgramFiles(x86)"):
+        pf = os.environ.get(pf_env)
+        if pf:
+            cuda_dir = Path(pf) / "NVIDIA GPU Computing Toolkit" / "CUDA"
+            if cuda_dir.is_dir():
+                try:
+                    for v_dir in cuda_dir.iterdir():
+                        v_bin = v_dir / "bin"
+                        if v_bin.is_dir():
+                            candidate_dirs.add(v_bin.resolve())
+                except Exception:
+                    pass
+
+    # 4. Search entries currently on PATH
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if entry:
+            e_path = Path(entry)
+            if e_path.is_dir() and any(k in entry.lower() for k in ("cuda", "nvidia", "cublas", "cudnn", "torch")):
+                try:
+                    candidate_dirs.add(e_path.resolve())
+                except Exception:
+                    pass
+
+    registered_count = 0
+    for d in candidate_dirs:
+        try:
+            handle = os.add_dll_directory(str(d))
+            _WINDOWS_DLL_HANDLES.append(handle)
+            os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+            registered_count += 1
+        except Exception:
+            pass
+
+    if registered_count > 0 and log_callback:
+        log_callback(f"[Whisper] Registered {registered_count} Windows CUDA DLL directory path(s) into process.")
+
+def check_windows_cublas_loaded() -> bool:
+    """Check if cublas64_12.dll is discoverable and loadable."""
+    import sys
+    if sys.platform != "win32":
+        return True
+    import ctypes
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll"):
+        try:
+            ctypes.CDLL(name)
+            return True
+        except Exception:
+            pass
+    return False
+
+def ensure_windows_cuda_libs(log_callback=None) -> bool:
+    """
+    On Windows, ensure CUDA 12 cublas and cudnn DLLs are present and registered.
+    If missing, attempts automatic one-time pip installation of nvidia-cublas-cu12 and nvidia-cudnn-cu12.
+    """
+    import sys
+    if sys.platform != "win32":
+        return True
+
+    configure_windows_cuda_dll_paths(log_callback=log_callback)
+    if check_windows_cublas_loaded():
+        return True
+
+    # Missing cublas64_12.dll: attempt automatic pip installation into current environment
+    if log_callback:
+        log_callback("[Whisper] CUDA 12 runtime (cublas64_12.dll) not found for faster-whisper. Installing nvidia-cublas-cu12 and nvidia-cudnn-cu12 for GPU acceleration...")
+    logger.info("Attempting automatic installation of nvidia-cublas-cu12 and nvidia-cudnn-cu12...")
+
+    import subprocess
+    try:
+        cmd = [sys.executable, "-m", "pip", "install", "nvidia-cublas-cu12", "nvidia-cudnn-cu12"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if proc.returncode == 0:
+            if log_callback:
+                log_callback("✅ Successfully installed nvidia-cublas-cu12 and nvidia-cudnn-cu12! Configuring DLL paths...")
+            configure_windows_cuda_dll_paths(log_callback=log_callback)
+            return check_windows_cublas_loaded()
+        else:
+            err = (proc.stderr or proc.stdout or "")[-300:]
+            if log_callback:
+                log_callback(f"⚠️ Automatic CUDA library installation returned: {err}", level="warning")
+            return False
+    except Exception as e:
+        if log_callback:
+            log_callback(f"⚠️ Failed to auto-install CUDA libraries: {e}", level="warning")
+        return False
+
+# Register Windows DLL paths on import
+configure_windows_cuda_dll_paths()
+
 def resolve_whisper_device_and_compute(requested_device: str = "auto", requested_compute: str = "auto") -> tuple[str, str]:
     """Determine the optimal execution device and quantization precision."""
     dev = (requested_device or "auto").strip().lower()
@@ -256,7 +396,13 @@ class WhisperTranscriptionService:
             return {"text": None, "segments": [], "error": "faster-whisper package not installed"}
 
         patch_pyav_metadata_errors_if_needed()
+        import sys
+        if sys.platform == "win32":
+            configure_windows_cuda_dll_paths(log_callback=log)
+
         target_device, target_compute = resolve_whisper_device_and_compute(self.device, self.compute_type)
+        if target_device == "cuda" and sys.platform == "win32":
+            ensure_windows_cuda_libs(log_callback=log)
 
         def run_inference(dev: str, comp: str) -> tuple[str, list]:
             patch_pyav_metadata_errors_if_needed()

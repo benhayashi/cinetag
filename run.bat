@@ -21,6 +21,11 @@ if not exist ".venv" (
     pip install -r requirements.txt
 ) else (
     call .venv\Scripts\activate.bat
+    python -c "import nvidia.cublas" 2>nul
+    if errorlevel 1 (
+        echo [!] Installing optional NVIDIA CUDA libraries for Whisper GPU acceleration...
+        pip install -r requirements.txt
+    )
 )
 
 python app.py %*

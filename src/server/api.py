@@ -921,12 +921,19 @@ def install_whisper_engine():
     import sys
     import subprocess
     try:
-        cmd = [sys.executable, "-m", "pip", "install", "faster-whisper>=1.0.0"]
+        pkgs = ["faster-whisper>=1.0.0"]
+        if sys.platform == "win32":
+            pkgs.extend(["nvidia-cublas-cu12", "nvidia-cudnn-cu12"])
+        cmd = [sys.executable, "-m", "pip", "install"] + pkgs
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if proc.returncode != 0:
             err = proc.stderr or proc.stdout or "Installation failed"
             raise RuntimeError(err[-500:])
-        return {"status": "success", "message": "faster-whisper installed successfully"}
+        # Refresh DLL paths on Windows immediately after install
+        if sys.platform == "win32":
+            from src.ai.whisper_service import configure_windows_cuda_dll_paths
+            configure_windows_cuda_dll_paths()
+        return {"status": "success", "message": "faster-whisper and CUDA libraries installed successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -10,3 +10,8 @@ opencv-python-headless>=4.8.0
 # Local Whisper speech recognition engine (fast on CPU & CUDA)
 faster-whisper>=1.0.0
 
+# NVIDIA CUDA 12 runtime libraries for GPU Whisper acceleration on Windows
+nvidia-cublas-cu12>=12.1.0; platform_system == "Windows"
+nvidia-cudnn-cu12>=9.0.0; platform_system == "Windows"
+
+
