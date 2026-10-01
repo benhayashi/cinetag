@@ -377,6 +377,75 @@ def test_whisper_remote_error_reporting(tmp_path):
         assert "Connection refused" in res["error"]
 
 
+def test_normalize_whisper_urls_translation():
+    t1, b1 = normalize_whisper_urls("http://192.168.1.100:9000", task="translate")
+    assert t1 == "http://192.168.1.100:9000/v1/audio/translations"
+    assert b1 == "http://192.168.1.100:9000"
+
+    t2, b2 = normalize_whisper_urls("http://truenas:9000/v1", task="translate")
+    assert t2 == "http://truenas:9000/v1/audio/translations"
+    assert b2 == "http://truenas:9000"
+
+    t3, b3 = normalize_whisper_urls("http://truenas:9000/v1/audio/transcriptions", task="translate")
+    assert t3 == "http://truenas:9000/v1/audio/translations"
+
+
+def test_whisper_remote_translation(tmp_path):
+    wav_file = tmp_path / "french_audio.wav"
+    with wave.open(str(wav_file), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"\x00\x00" * 800)
+
+    svc = WhisperTranscriptionService(
+        backend="remote",
+        model_name="large-v3",
+        remote_url="http://192.168.1.100:9000",
+        task="translate",
+        translate_to_english=True
+    )
+    assert svc.task == "translate"
+    assert svc.translate_to_english is True
+
+    captured_url = None
+    captured_data = None
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {"content-type": "application/json"}
+    mock_resp.json.return_value = {
+        "text": "Good morning everyone, welcome to the show.",
+        "segments": [
+            {"start": 0.0, "end": 2.5, "text": "Good morning everyone,"},
+            {"start": 2.5, "end": 4.0, "text": "welcome to the show."}
+        ]
+    }
+
+    def mock_post(url, **kwargs):
+        nonlocal captured_url, captured_data
+        captured_url = url
+        captured_data = kwargs.get("data")
+        return mock_resp
+
+    with patch("httpx.Client.post", side_effect=mock_post):
+        res = svc.transcribe_detailed(wav_file)
+        assert captured_url == "http://192.168.1.100:9000/v1/audio/translations"
+        assert captured_data.get("task") == "translate"
+        assert res["text"] == "Good morning everyone, welcome to the show."
+        assert len(res["segments"]) == 2
+
+
+def test_app_config_whisper_translation_defaults():
+    cfg = AppConfig()
+    assert cfg.whisper_translate_to_english is False
+    assert cfg.whisper_task == "transcribe"
+
+    cfg.whisper_translate_to_english = True
+    assert cfg.whisper_translate_to_english is True
+
+
+
 
 
 

@@ -7,26 +7,35 @@ from src.core.paths import get_models_dir
 
 logger = logging.getLogger(__name__)
 
-def normalize_whisper_urls(url: str) -> tuple[str, str]:
+def normalize_whisper_urls(url: str, task: str = "transcribe") -> tuple[str, str]:
     """
     Returns (transcription_url, base_url).
-    Handles root addresses, ports, /v1 paths, and full transcription endpoints.
+    Handles root addresses, ports, /v1 paths, and full transcription/translation endpoints.
     Examples:
       'http://192.168.1.100:9000' -> ('http://192.168.1.100:9000/v1/audio/transcriptions', 'http://192.168.1.100:9000')
+      'http://192.168.1.100:9000' with task='translate' -> ('http://192.168.1.100:9000/v1/audio/translations', 'http://192.168.1.100:9000')
       'http://truenas:9000/v1'   -> ('http://truenas:9000/v1/audio/transcriptions', 'http://truenas:9000')
-      'http://host:9000/v1/audio/transcriptions' -> ('http://host:9000/v1/audio/transcriptions', 'http://host:9000')
     """
     if not url:
         return "", ""
     clean = url.strip().rstrip("/")
-    if clean.endswith("/audio/transcriptions") or clean.endswith("/transcriptions") or clean.endswith("/inference"):
+    endpoint = "translations" if task == "translate" else "transcriptions"
+    if clean.endswith("/audio/transcriptions") or clean.endswith("/audio/translations"):
+        base_endpoint = clean.rsplit("/audio/", 1)[0]
+        transcribe_url = f"{base_endpoint}/audio/{endpoint}"
+        base_url = clean.split("/v1")[0] if "/v1" in clean else clean.rsplit("/", 1)[0]
+    elif clean.endswith("/transcriptions") or clean.endswith("/translations"):
+        base_endpoint = clean.rsplit("/", 1)[0]
+        transcribe_url = f"{base_endpoint}/{endpoint}"
+        base_url = clean.split("/v1")[0] if "/v1" in clean else clean.rsplit("/", 1)[0]
+    elif clean.endswith("/inference"):
         transcribe_url = clean
         base_url = clean.split("/v1")[0] if "/v1" in clean else clean.rsplit("/", 1)[0]
     elif clean.endswith("/v1"):
-        transcribe_url = f"{clean}/audio/transcriptions"
+        transcribe_url = f"{clean}/audio/{endpoint}"
         base_url = clean[:-3]
     else:
-        transcribe_url = f"{clean}/v1/audio/transcriptions"
+        transcribe_url = f"{clean}/v1/audio/{endpoint}"
         base_url = clean
     return transcribe_url, base_url
 
@@ -252,7 +261,9 @@ class WhisperTranscriptionService:
         remote_url: Optional[str] = None,
         language: Optional[str] = None,
         download_root: Optional[str] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        task: str = "transcribe",
+        translate_to_english: bool = False
     ):
         self.backend = backend
         self.model_name = normalize_whisper_model_name(model_name)
@@ -260,9 +271,11 @@ class WhisperTranscriptionService:
         self.device_index = int(device_index or 0)
         self.compute_type = (compute_type or "auto").strip().lower()
         self.remote_url = remote_url
-        self.language = language
+        self.language = (language.strip() if language and language.strip() else None)
         self.download_root = download_root or str(get_models_dir())
         self.api_key = api_key
+        self.task = "translate" if (translate_to_english or (task or "").strip().lower() == "translate") else "transcribe"
+        self.translate_to_english = (self.task == "translate")
         self._model_instance = None
 
     def is_available(self) -> Dict[str, Any]:
@@ -340,6 +353,9 @@ class WhisperTranscriptionService:
             "remote_url": self.remote_url,
             "has_api_key": bool(self.api_key),
             "preferred_backend": self.backend,
+            "task": self.task,
+            "translate_to_english": self.translate_to_english,
+            "language": self.language,
             "models_dir": str(models_dir),
             "downloaded_models": sorted(list(set(downloaded)))
         }
@@ -418,10 +434,12 @@ class WhisperTranscriptionService:
                 log(f"[Whisper] Initializing model '{self.model_name}' on {dev.upper()} ({comp})...")
 
             model = WhisperModel(self.model_name, **kwargs)
-            log(f"[Whisper] Starting audio transcription on {dev.upper()}...")
+            action_desc = "audio transcription & translation to English" if self.task == "translate" else "audio transcription"
+            log(f"[Whisper] Starting {action_desc} on {dev.upper()}...")
             segments, info = model.transcribe(
                 str(audio_path),
                 language=self.language,
+                task=self.task,
                 beam_size=5
             )
             seg_list = []
@@ -436,7 +454,10 @@ class WhisperTranscriptionService:
                         "text": t
                     })
             full_text = " ".join(text_parts).strip()
-            log(f"[Whisper] Transcription completed on {dev.upper()}: {len(seg_list)} segments detected (audio duration: {info.duration:.1f}s, language: {info.language}).")
+            detected_lang = getattr(info, "language", None) or "auto"
+            lang_str = f"detected language: {detected_lang}" + (" (translated to en)" if self.task == "translate" and detected_lang != "en" else "")
+            done_desc = "Transcription & translation to English" if self.task == "translate" else "Transcription"
+            log(f"[Whisper] {done_desc} completed on {dev.upper()}: {len(seg_list)} segments detected (audio duration: {info.duration:.1f}s, {lang_str}).")
             return full_text, seg_list
 
         try:
@@ -464,8 +485,9 @@ class WhisperTranscriptionService:
                 self._model_instance = whisper.load_model(self.model_name)
 
             if log_callback:
-                log_callback(f"[Whisper] Transcribing audio with openai-whisper...")
-            result = self._model_instance.transcribe(str(audio_path), language=self.language)
+                action_desc = "Transcribing audio and translating to English" if self.task == "translate" else "Transcribing audio"
+                log_callback(f"[Whisper] {action_desc} with openai-whisper...")
+            result = self._model_instance.transcribe(str(audio_path), language=self.language, task=self.task)
 
             raw_text = result.get("text", "").strip()
             seg_list = []
@@ -505,7 +527,7 @@ class WhisperTranscriptionService:
 
         try:
             import httpx
-            transcribe_url, base_url = normalize_whisper_urls(self.remote_url)
+            transcribe_url, base_url = normalize_whisper_urls(self.remote_url, task=self.task)
             headers = {}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
@@ -520,19 +542,22 @@ class WhisperTranscriptionService:
             mime = "audio/wav" if suffix in (".wav", "") else f"audio/{suffix.lstrip('.')}"
             filename = audio_path.name
 
-            log(f"[Remote Whisper] Connecting to {self.remote_url} (model: '{self.model_name}', audio size: {len(audio_bytes) / 1024:.1f} KB)...")
+            task_info = f", task: '{self.task}'" if self.task == "translate" else ""
+            log(f"[Remote Whisper] Connecting to {self.remote_url} (model: '{self.model_name}'{task_info}, audio size: {len(audio_bytes) / 1024:.1f} KB)...")
 
             with httpx.Client(timeout=300.0) as client:
                 res = None
                 last_err = None
 
-                # Strategy 1: OpenAI-compatible /v1/audio/transcriptions (Speaches, faster-whisper-server, LocalAI, vLLM)
+                # Strategy 1: OpenAI-compatible /v1/audio/transcriptions or /v1/audio/translations (Speaches, faster-whisper-server, LocalAI, vLLM)
                 data_payload = {
                     "model": self.model_name or "base",
                     "response_format": "verbose_json"
                 }
                 if self.language:
                     data_payload["language"] = self.language
+                if self.task == "translate":
+                    data_payload["task"] = "translate"
 
                 try:
                     files = {"file": (filename, audio_bytes, mime)}
@@ -542,6 +567,11 @@ class WhisperTranscriptionService:
                         data_payload.pop("response_format", None)
                         files = {"file": (filename, audio_bytes, mime)}
                         first_res = client.post(transcribe_url, files=files, data=data_payload, headers=headers)
+                    if first_res.status_code == 404 and self.task == "translate" and "/translations" in transcribe_url:
+                        # Some servers implement /transcriptions with task="translate" rather than /translations
+                        alt_url = transcribe_url.replace("/translations", "/transcriptions")
+                        files = {"file": (filename, audio_bytes, mime)}
+                        first_res = client.post(alt_url, files=files, data=data_payload, headers=headers)
                     first_res.raise_for_status()
                     res = first_res
                 except Exception as e1:
@@ -551,7 +581,7 @@ class WhisperTranscriptionService:
                 # (Standard on TrueNAS Scale / Docker containers like ahmetoner/whisper-asr-webservice)
                 if res is None:
                     asr_url = f"{base_url}/asr"
-                    asr_params = {"task": "transcribe", "output": "json"}
+                    asr_params = {"task": self.task, "output": "json"}
                     if self.language:
                         asr_params["language"] = self.language
                     try:
@@ -594,6 +624,8 @@ class WhisperTranscriptionService:
                                     retry_data = {"model": matched_model}
                                     if self.language:
                                         retry_data["language"] = self.language
+                                    if self.task == "translate":
+                                        retry_data["task"] = "translate"
                                     retry_res = client.post(transcribe_url, files=files, data=retry_data, headers=headers)
                                     if retry_res.status_code == 200:
                                         res = retry_res
@@ -640,7 +672,8 @@ class WhisperTranscriptionService:
 
                 final_text = raw_text.strip() if raw_text else None
                 if final_text:
-                    log(f"[Remote Whisper] Transcription received successfully: {len(final_text)} chars, {len(seg_list)} segment(s).")
+                    action_done = "Translation & transcription" if self.task == "translate" else "Transcription"
+                    log(f"[Remote Whisper] {action_done} received successfully: {len(final_text)} chars, {len(seg_list)} segment(s).")
                 else:
                     log(f"[Remote Whisper] Server returned response (HTTP {res.status_code}), but no dialogue text was found in the audio.", level="info")
 

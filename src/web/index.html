@@ -864,6 +864,13 @@
               <input type="checkbox" id="cfg-transcribe-audio" checked>
               <b>Enable Audio Transcription during processing</b>
             </label>
+            <label class="checkbox-label mt-2">
+              <input type="checkbox" id="cfg-whisper-translate-to-english">
+              <b>🌐 Always Translate Spoken Audio to English (Subtitle Edit feature)</b>
+              <span class="text-muted" style="font-size: 0.85rem; display: block; margin-left: 1.6rem;">
+                Automatically detects foreign/non-English spoken languages and translates dialogue directly into English for AI reasoning and exported <code>.srt</code> subtitles.
+              </span>
+            </label>
           </div>
 
           <div class="form-grid mt-2">
@@ -874,6 +881,11 @@
                 <option value="remote">Remote Server (OpenAI-Compatible / TrueNAS SCALE / Docker)</option>
                 <option value="openai-whisper">Standard OpenAI Whisper (python library)</option>
               </select>
+            </div>
+            <div class="form-group">
+              <label for="cfg-whisper-language">Spoken Audio Language</label>
+              <input type="text" id="cfg-whisper-language" class="form-control" placeholder="Auto-detect (leave blank, or 'es', 'fr', 'ja', 'de')">
+              <small class="text-muted" style="font-size: 0.75rem;">Leave empty for auto-detection across 99+ languages.</small>
             </div>
           </div>
 

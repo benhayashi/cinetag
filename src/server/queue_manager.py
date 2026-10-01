@@ -268,6 +268,7 @@ class QueueManager:
                     self.log(f"Extracting audio for {video_path.name}...", task_id=task.id)
                     wav_path = extract_audio(video_path, custom_ffmpeg=cfg.ffmpeg_path)
                     if wav_path:
+                        is_translate = bool(getattr(cfg, "whisper_translate_to_english", False) or getattr(cfg, "whisper_task", "transcribe") == "translate")
                         whisper_svc = WhisperTranscriptionService(
                             backend=cfg.whisper_backend,
                             model_name=cfg.whisper_model,
@@ -276,7 +277,9 @@ class QueueManager:
                             compute_type=getattr(cfg, "whisper_compute_type", "auto"),
                             remote_url=cfg.whisper_remote_url,
                             language=cfg.whisper_language,
-                            api_key=getattr(cfg, "whisper_api_key", None)
+                            api_key=getattr(cfg, "whisper_api_key", None),
+                            task="translate" if is_translate else "transcribe",
+                            translate_to_english=is_translate
                         )
                         avail = whisper_svc.is_available()
                         if cfg.whisper_backend == "faster-whisper" and not avail.get("faster_whisper"):

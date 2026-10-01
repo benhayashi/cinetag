@@ -1475,6 +1475,12 @@ async function loadConfig() {
     const transcribeAudioEl = document.getElementById("cfg-transcribe-audio");
     if (transcribeAudioEl) transcribeAudioEl.checked = cfg.transcribe_audio !== false;
 
+    const whisperTranslateEl = document.getElementById("cfg-whisper-translate-to-english");
+    if (whisperTranslateEl) whisperTranslateEl.checked = !!(cfg.whisper_translate_to_english || cfg.whisper_task === "translate");
+
+    const whisperLangEl = document.getElementById("cfg-whisper-language");
+    if (whisperLangEl) whisperLangEl.value = cfg.whisper_language || "";
+
     const whisperBackendEl = document.getElementById("cfg-whisper-backend");
     const backendVal = cfg.whisper_backend || "faster-whisper";
     if (whisperBackendEl) {
@@ -1904,6 +1910,9 @@ function initSettings() {
       openai_compatible_model: document.getElementById("cfg-openai-model").value.trim(),
       cloud_provider: cloudProv,
       transcribe_audio: document.getElementById("cfg-transcribe-audio")?.checked ?? true,
+      whisper_translate_to_english: document.getElementById("cfg-whisper-translate-to-english")?.checked ?? false,
+      whisper_task: (document.getElementById("cfg-whisper-translate-to-english")?.checked) ? "translate" : "transcribe",
+      whisper_language: document.getElementById("cfg-whisper-language")?.value.trim() || null,
       whisper_backend: document.getElementById("cfg-whisper-backend")?.value || "faster-whisper",
       whisper_remote_url: document.getElementById("cfg-whisper-remote-url")?.value.trim() || null,
       whisper_api_key: document.getElementById("cfg-whisper-api-key")?.value.trim() || "",

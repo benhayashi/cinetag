@@ -904,6 +904,7 @@ class WhisperRemoteProbeRequest(BaseModel):
 @router.get("/models/whisper")
 def check_whisper():
     cfg = load_config()
+    is_translate = bool(getattr(cfg, "whisper_translate_to_english", False) or getattr(cfg, "whisper_task", "transcribe") == "translate")
     svc = WhisperTranscriptionService(
         backend=cfg.whisper_backend,
         model_name=cfg.whisper_model,
@@ -911,7 +912,10 @@ def check_whisper():
         device_index=getattr(cfg, "whisper_device_index", 0),
         compute_type=getattr(cfg, "whisper_compute_type", "auto"),
         remote_url=cfg.whisper_remote_url,
-        api_key=getattr(cfg, "whisper_api_key", None)
+        language=cfg.whisper_language,
+        api_key=getattr(cfg, "whisper_api_key", None),
+        task="translate" if is_translate else "transcribe",
+        translate_to_english=is_translate
     )
     return svc.is_available()
 

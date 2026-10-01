@@ -43,6 +43,8 @@ class AppConfig(BaseModel):
     whisper_remote_url: Optional[str] = None
     whisper_api_key: Optional[str] = Field(default="", description="API key or Bearer token for remote Whisper server")
     whisper_language: Optional[str] = None
+    whisper_translate_to_english: bool = Field(default=False, description="Translate foreign language speech to English during Whisper transcription")
+    whisper_task: str = Field(default="transcribe", description="Whisper task: 'transcribe' (keep original language) or 'translate' (translate to English)")
     whisper_device: str = Field(default="auto", description="auto | cuda | cpu")
     whisper_device_index: int = Field(default=0, description="NVIDIA GPU device index (0 for first GPU, 1 for second, etc.)")
     whisper_compute_type: str = Field(default="auto", description="auto | float16 | int8 | int8_float16 | float32")
