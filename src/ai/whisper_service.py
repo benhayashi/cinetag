@@ -360,7 +360,7 @@ class WhisperTranscriptionService:
         elif self.backend == "openai-whisper":
             return self._transcribe_openai_whisper(audio_path, log_callback=log_callback)
         elif self.backend == "remote":
-            return self._transcribe_remote(audio_path)
+            return self._transcribe_remote(audio_path, log_callback=log_callback)
         else:
             avail = self.is_available()
             if avail["faster_whisper"]:
@@ -368,7 +368,7 @@ class WhisperTranscriptionService:
             elif avail["openai_whisper"]:
                 return self._transcribe_openai_whisper(audio_path, log_callback=log_callback)
             elif self.remote_url:
-                return self._transcribe_remote(audio_path)
+                return self._transcribe_remote(audio_path, log_callback=log_callback)
             else:
                 if log_callback:
                     log_callback("⚠️ No Whisper backend installed in Python environment.", "warning")
@@ -485,62 +485,171 @@ class WhisperTranscriptionService:
             logger.error(f"openai-whisper transcription failed: {e}")
             return {"text": None, "segments": []}
 
-    def _transcribe_remote(self, audio_path: Path) -> Dict[str, Any]:
+    def _transcribe_remote(self, audio_path: Path, log_callback=None) -> Dict[str, Any]:
+        def log(msg: str, level: str = "info"):
+            if log_callback:
+                try:
+                    log_callback(msg, level)
+                except Exception:
+                    pass
+            if level == "error":
+                logger.error(msg)
+            elif level == "warning":
+                logger.warning(msg)
+            else:
+                logger.info(msg)
+
         if not self.remote_url:
-            return {"text": None, "segments": []}
+            log("⚠️ Remote Whisper URL is not configured.", level="warning")
+            return {"text": None, "segments": [], "error": "Remote Whisper URL not configured"}
+
         try:
             import httpx
-            transcribe_url, _ = normalize_whisper_urls(self.remote_url)
+            transcribe_url, base_url = normalize_whisper_urls(self.remote_url)
             headers = {}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
 
+            if not audio_path.exists() or audio_path.stat().st_size <= 44:
+                err_msg = f"Audio file is empty ({audio_path.stat().st_size if audio_path.exists() else 0} bytes)"
+                log(f"⚠️ {err_msg}", level="warning")
+                return {"text": None, "segments": [], "error": err_msg}
+
+            audio_bytes = audio_path.read_bytes()
             suffix = audio_path.suffix.lower()
             mime = "audio/wav" if suffix in (".wav", "") else f"audio/{suffix.lstrip('.')}"
+            filename = audio_path.name
 
-            with open(audio_path, "rb") as f:
-                files = {"file": (audio_path.name, f, mime)}
-                data = {
+            log(f"[Remote Whisper] Connecting to {self.remote_url} (model: '{self.model_name}', audio size: {len(audio_bytes) / 1024:.1f} KB)...")
+
+            with httpx.Client(timeout=300.0) as client:
+                res = None
+                last_err = None
+
+                # Strategy 1: OpenAI-compatible /v1/audio/transcriptions (Speaches, faster-whisper-server, LocalAI, vLLM)
+                data_payload = {
                     "model": self.model_name or "base",
                     "response_format": "verbose_json"
                 }
                 if self.language:
-                    data["language"] = self.language
+                    data_payload["language"] = self.language
 
-                with httpx.Client(timeout=300.0) as client:
+                try:
+                    files = {"file": (filename, audio_bytes, mime)}
+                    first_res = client.post(transcribe_url, files=files, data=data_payload, headers=headers)
+                    if first_res.status_code in (400, 422) and "response_format" in data_payload:
+                        # Fallback to plain json format if verbose_json rejected
+                        data_payload.pop("response_format", None)
+                        files = {"file": (filename, audio_bytes, mime)}
+                        first_res = client.post(transcribe_url, files=files, data=data_payload, headers=headers)
+                    first_res.raise_for_status()
+                    res = first_res
+                except Exception as e1:
+                    last_err = e1
+
+                # Strategy 2: If /v1/audio/transcriptions returned 404 or failed, try ASR WebService (/asr)
+                # (Standard on TrueNAS Scale / Docker containers like ahmetoner/whisper-asr-webservice)
+                if res is None:
+                    asr_url = f"{base_url}/asr"
+                    asr_params = {"task": "transcribe", "output": "json"}
+                    if self.language:
+                        asr_params["language"] = self.language
                     try:
-                        res = client.post(transcribe_url, files=files, data=data, headers=headers)
-                        res.raise_for_status()
-                    except httpx.HTTPStatusError as e:
-                        # Fallback without verbose_json if remote server only accepts plain json
-                        if e.response.status_code in (400, 422) and "response_format" in data:
-                            f.seek(0)
-                            data.pop("response_format", None)
-                            res = client.post(transcribe_url, files=files, data=data, headers=headers)
-                            res.raise_for_status()
-                        else:
-                            raise
+                        files_asr = {"audio_file": (filename, audio_bytes, mime)}
+                        asr_res = client.post(asr_url, files=files_asr, params=asr_params, headers=headers)
+                        if asr_res.status_code == 200:
+                            res = asr_res
+                        elif asr_res.status_code in (400, 422):
+                            files_asr_alt = {"file": (filename, audio_bytes, mime)}
+                            asr_res2 = client.post(asr_url, files=files_asr_alt, params=asr_params, headers=headers)
+                            if asr_res2.status_code == 200:
+                                res = asr_res2
+                    except Exception:
+                        pass
 
+                # Strategy 3: Check /v1/models if error was model mismatch (e.g. Systran/faster-whisper-large-v3)
+                if res is None and last_err is not None:
+                    try:
+                        m_res = client.get(f"{base_url}/v1/models", headers=headers, timeout=5.0)
+                        if m_res.status_code == 200:
+                            m_data = m_res.json()
+                            avail_models = []
+                            if isinstance(m_data, dict) and "data" in m_data:
+                                avail_models = [m.get("id") for m in m_data["data"] if isinstance(m, dict) and "id" in m]
+                            elif isinstance(m_data, dict) and "models" in m_data:
+                                avail_models = [m.get("id") if isinstance(m, dict) else str(m) for m in m_data["models"]]
+
+                            if avail_models:
+                                matched_model = None
+                                for am in avail_models:
+                                    if self.model_name and self.model_name in am.lower():
+                                        matched_model = am
+                                        break
+                                if not matched_model and len(avail_models) == 1:
+                                    matched_model = avail_models[0]
+
+                                if matched_model and matched_model != self.model_name:
+                                    log(f"[Remote Whisper] Server uses model identifier '{matched_model}'. Retrying...")
+                                    files = {"file": (filename, audio_bytes, mime)}
+                                    retry_data = {"model": matched_model}
+                                    if self.language:
+                                        retry_data["language"] = self.language
+                                    retry_res = client.post(transcribe_url, files=files, data=retry_data, headers=headers)
+                                    if retry_res.status_code == 200:
+                                        res = retry_res
+                    except Exception:
+                        pass
+
+                if res is None:
+                    raise last_err or RuntimeError(f"Could not connect to Remote Whisper at {self.remote_url}")
+
+                raw_text = ""
+                seg_list = []
+                content_type = res.headers.get("content-type", "")
+
+                if "application/json" in content_type or res.text.strip().startswith(("{", "[")):
                     jdata = res.json()
-                    raw_text = jdata.get("text", "") or jdata.get("transcription", "")
-                    
-                    seg_list = []
-                    raw_segments = jdata.get("segments", [])
-                    if isinstance(raw_segments, list):
-                        for s in raw_segments:
-                            if isinstance(s, dict):
-                                stext = s.get("text", "").strip()
+                    if isinstance(jdata, dict):
+                        raw_text = jdata.get("text", "") or jdata.get("transcription", "") or ""
+                        raw_segments = jdata.get("segments", [])
+                        if isinstance(raw_segments, list):
+                            for s in raw_segments:
+                                if isinstance(s, dict):
+                                    stext = s.get("text", "").strip()
+                                    if stext:
+                                        seg_list.append({
+                                            "start": float(s.get("start", 0.0)),
+                                            "end": float(s.get("end", 0.0)),
+                                            "text": stext
+                                        })
+                    elif isinstance(jdata, list):
+                        for item in jdata:
+                            if isinstance(item, dict):
+                                stext = item.get("text", "").strip()
                                 if stext:
                                     seg_list.append({
-                                        "start": float(s.get("start", 0.0)),
-                                        "end": float(s.get("end", 0.0)),
+                                        "start": float(item.get("start", 0.0)),
+                                        "end": float(item.get("end", 0.0)),
                                         "text": stext
                                     })
+                        raw_text = " ".join(s["text"] for s in seg_list)
+                    elif isinstance(jdata, str):
+                        raw_text = jdata
+                else:
+                    raw_text = res.text.strip()
 
-                    return {
-                        "text": raw_text.strip() if raw_text else None,
-                        "segments": seg_list
-                    }
+                final_text = raw_text.strip() if raw_text else None
+                if final_text:
+                    log(f"[Remote Whisper] Transcription received successfully: {len(final_text)} chars, {len(seg_list)} segment(s).")
+                else:
+                    log(f"[Remote Whisper] Server returned response (HTTP {res.status_code}), but no dialogue text was found in the audio.", level="info")
+
+                return {
+                    "text": final_text,
+                    "segments": seg_list
+                }
+
         except Exception as e:
-            logger.error(f"Remote whisper request to {self.remote_url} failed: {e}")
-            return {"text": None, "segments": []}
+            err_msg = f"Remote whisper request to {self.remote_url} failed: {e}"
+            log(f"⚠️ {err_msg}", level="warning")
+            return {"text": None, "segments": [], "error": err_msg}

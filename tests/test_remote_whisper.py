@@ -317,5 +317,66 @@ def test_windows_cuda_dll_helpers(monkeypatch):
     assert isinstance(logs, list)
 
 
+def test_whisper_remote_asr_fallback(tmp_path):
+    wav_file = tmp_path / "test.wav"
+    with wave.open(str(wav_file), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"\x00\x00" * 800)
+
+    svc = WhisperTranscriptionService(
+        backend="remote",
+        model_name="large-v3",
+        remote_url="http://192.168.1.100:9000"
+    )
+
+    mock_404 = MagicMock()
+    mock_404.status_code = 404
+    mock_404.raise_for_status.side_effect = Exception("404 Not Found")
+
+    mock_200 = MagicMock()
+    mock_200.status_code = 200
+    mock_200.headers = {"content-type": "application/json"}
+    mock_200.json.return_value = {
+        "text": "Fallback ASR dialogue",
+        "segments": [{"start": 0.0, "end": 2.0, "text": "Fallback ASR dialogue"}]
+    }
+
+    def mock_post(url, **kwargs):
+        if "audio/transcriptions" in url:
+            return mock_404
+        if "/asr" in url:
+            return mock_200
+        return mock_404
+
+    with patch("httpx.Client.post", side_effect=mock_post):
+        res = svc.transcribe_detailed(wav_file)
+        assert res["text"] == "Fallback ASR dialogue"
+        assert len(res["segments"]) == 1
+
+
+def test_whisper_remote_error_reporting(tmp_path):
+    wav_file = tmp_path / "test.wav"
+    with wave.open(str(wav_file), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"\x00\x00" * 800)
+
+    svc = WhisperTranscriptionService(
+        backend="remote",
+        model_name="large-v3",
+        remote_url="http://192.168.1.100:9000"
+    )
+
+    with patch("httpx.Client.post", side_effect=Exception("Connection refused")):
+        res = svc.transcribe_detailed(wav_file)
+        assert res["text"] is None
+        assert "error" in res
+        assert "Connection refused" in res["error"]
+
+
+
 
 

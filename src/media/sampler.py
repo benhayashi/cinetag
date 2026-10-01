@@ -151,14 +151,17 @@ def extract_audio(
     audio_dir.mkdir(parents=True, exist_ok=True)
     out_audio = audio_dir / f"{video_hash}.wav"
 
-    if out_audio.exists() and out_audio.stat().st_size > 0:
+    if out_audio.exists() and out_audio.stat().st_size > 44:
         return out_audio
+    elif out_audio.exists():
+        out_audio.unlink(missing_ok=True)
 
     cmd = [
         ffmpeg_bin,
         "-y",
         "-i", str(video_path),
         "-vn",
+        "-map", "0:a:0?",
         "-acodec", "pcm_s16le",
         "-ar", "16000",
         "-ac", "1",
@@ -178,6 +181,8 @@ def extract_audio(
         logger.error(f"Audio extraction failed for {video_path}: {e}")
         return None
 
-    if out_audio.exists() and out_audio.stat().st_size > 0:
+    if out_audio.exists() and out_audio.stat().st_size > 44:
         return out_audio
+    elif out_audio.exists():
+        out_audio.unlink(missing_ok=True)
     return None
