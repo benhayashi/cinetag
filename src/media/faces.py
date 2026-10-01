@@ -18,6 +18,12 @@ from PIL import Image
 
 try:
     import cv2
+    # Silence OpenCV internal C++ warnings (such as DNN graph engine target warnings in OpenCV 5+)
+    try:
+        if hasattr(cv2, "utils") and hasattr(cv2.utils, "logging"):
+            cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+    except Exception:
+        pass
 except ImportError:
     cv2 = None
 
@@ -952,6 +958,10 @@ class LocalFaceEngine:
     filters out non-face body parts like hands, elbows, arms, knees, and background patterns.
     """
 
+    _cached_detector = None
+    _cached_confidence: Optional[float] = None
+    _lock = threading.Lock()
+
     @classmethod
     def _get_detector(cls, w: int, h: int, confidence: float = 0.70):
         """Create or configure a FaceDetectorYN instance for given image dimensions."""
@@ -959,19 +969,27 @@ class LocalFaceEngine:
         if cv2 is None or not model_path.exists():
             logger.warning(f"YuNet model or cv2 unavailable (model={model_path.exists()})")
             return None
-        try:
-            detector = cv2.FaceDetectorYN_create(
-                str(model_path),
-                "",
-                (w, h),
-                score_threshold=float(confidence),
-                nms_threshold=0.3,
-                top_k=5000
-            )
-            return detector
-        except Exception as e:
-            logger.error(f"Failed to initialize FaceDetectorYN: {e}")
-            return None
+        with cls._lock:
+            try:
+                # If cached detector exists and score threshold matches, update input size dynamically
+                if cls._cached_detector is not None and cls._cached_confidence == confidence:
+                    cls._cached_detector.setInputSize((int(w), int(h)))
+                    return cls._cached_detector
+
+                detector = cv2.FaceDetectorYN_create(
+                    str(model_path),
+                    "",
+                    (int(w), int(h)),
+                    score_threshold=float(confidence),
+                    nms_threshold=0.3,
+                    top_k=5000
+                )
+                cls._cached_detector = detector
+                cls._cached_confidence = confidence
+                return detector
+            except Exception as e:
+                logger.error(f"Failed to initialize FaceDetectorYN: {e}")
+                return None
 
     @classmethod
     def detect_and_embed(cls, image_path: Path, confidence: float = 0.60) -> List[Dict[str, Any]]:
