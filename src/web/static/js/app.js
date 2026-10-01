@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initFacesTab();
   initFsBrowser();
   initConflictModal();
+  initManualRenameModal();
   
   // Initial config load & backend status
   loadConfig();
@@ -627,6 +628,7 @@ function renderQueueTable(tasks, currentTask) {
       actionsHtml = `
         <div style="display:flex; gap:4px; align-items:center;">
           <button class="btn btn-sm btn-secondary" onclick="openResultsModal('${escapeHtml(t.file_path)}')" title="View Analysis Results">👁️ View</button>
+          <button class="btn btn-sm btn-secondary" onclick="openRenameModal('${escapeHtml(t.file_path)}', '${escapeHtml((t.result && t.result.title) || '')}', '${t.id}')" title="Rename video and all support files">✏️ Rename</button>
           <button class="btn btn-sm btn-danger-outline" onclick="removeQueueItem('${t.id}')" title="Remove from queue list" style="padding:2px 6px;">✕</button>
         </div>
       `;
@@ -838,10 +840,20 @@ function renderLatestResult(task) {
     dlEl.innerHTML = dlHtml;
   }
 
+  const targetPath = res.final_file_path || task.file_path;
+  card.dataset.filePath = targetPath;
+  card.dataset.taskId = task.id || "";
+  card.dataset.title = res.title || "";
+
+  // Button to rename
+  const btnRenameLatest = document.getElementById("btn-rename-latest-result");
+  if (btnRenameLatest) {
+    btnRenameLatest.onclick = () => openRenameModal(targetPath, res.title || "", task.id);
+  }
+
   // Button to open full modal
   const btnModal = document.getElementById("btn-open-latest-modal");
   if (btnModal) {
-    const targetPath = res.final_file_path || task.file_path;
     btnModal.onclick = () => openResultsModal(targetPath);
   }
 
@@ -3148,6 +3160,11 @@ async function openResultsModal(filePath) {
       suggestedBox.classList.add("hidden");
     }
 
+    const btnModalRename = document.getElementById("btn-modal-rename-clip");
+    if (btnModalRename) {
+      btnModalRename.onclick = () => openRenameModal(filePath, data.title || "", null);
+    }
+
     document.getElementById("results-display-summary").textContent = data.summary || "No summary recorded.";
 
     // Key moments / events
@@ -4392,4 +4409,271 @@ function updateFsSelectionSummary() {
     summaryEl.textContent = `${fsSelectedFiles.size} of ${fsCachedFiles.length} video(s) selected`;
   }
 }
+
+// --- Manual Video & Support Files Renamer Modal ---
+let currentRenameContext = null;
+let renamePreviewDebounce = null;
+
+function initManualRenameModal() {
+  const modal = document.getElementById("modal-rename-clip");
+  const btnClose = document.getElementById("btn-close-rename-modal");
+  const btnCancel = document.getElementById("btn-cancel-rename-modal");
+  const btnConfirm = document.getElementById("btn-confirm-rename-modal");
+  const inputEl = document.getElementById("rename-modal-input");
+  const modeRadios = document.querySelectorAll('input[name="rename-mode-choice"]');
+
+  const closeModal = () => {
+    if (modal) modal.classList.add("hidden");
+    currentRenameContext = null;
+  };
+
+  if (btnClose) btnClose.addEventListener("click", closeModal);
+  if (btnCancel) btnCancel.addEventListener("click", closeModal);
+
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modal && !modal.classList.contains("hidden")) {
+      closeModal();
+    }
+  });
+
+  if (inputEl) {
+    inputEl.addEventListener("input", () => {
+      triggerRenamePreview();
+    });
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        confirmRenameAction();
+      }
+    });
+  }
+
+  modeRadios.forEach(r => {
+    r.addEventListener("change", () => {
+      triggerRenamePreview();
+    });
+  });
+
+  if (btnConfirm) {
+    btnConfirm.addEventListener("click", () => {
+      confirmRenameAction();
+    });
+  }
+}
+
+function triggerRenamePreview() {
+  if (renamePreviewDebounce) clearTimeout(renamePreviewDebounce);
+  renamePreviewDebounce = setTimeout(updateRenamePreview, 120);
+}
+
+async function updateRenamePreview() {
+  if (!currentRenameContext || !currentRenameContext.filePath) return;
+  const inputEl = document.getElementById("rename-modal-input");
+  const previewFnEl = document.getElementById("rename-preview-filename");
+  const spinnerEl = document.getElementById("rename-preview-spinner");
+  const modeChoice = document.querySelector('input[name="rename-mode-choice"]:checked')?.value || "title";
+  const newName = inputEl ? inputEl.value.trim() : "";
+
+  if (spinnerEl) spinnerEl.classList.remove("hidden");
+
+  try {
+    const res = await fetch("/api/rename/single/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file_path: currentRenameContext.filePath,
+        new_name: newName,
+        mode: modeChoice
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (previewFnEl) previewFnEl.textContent = data.target_filename;
+
+      const sidecarsCountEl = document.getElementById("rename-preview-sidecars-count");
+      if (sidecarsCountEl) sidecarsCountEl.textContent = data.sidecars_found ? data.sidecars_found.length : 0;
+
+      const sidecarsListEl = document.getElementById("rename-preview-sidecars-list");
+      if (sidecarsListEl) {
+        if (data.sidecars_found && data.sidecars_found.length > 0) {
+          sidecarsListEl.innerHTML = data.sidecars_found.map(sc => {
+            let badgeColor = "#3b82f6";
+            if (sc.endsWith(".srt")) badgeColor = "#10b981";
+            else if (sc.endsWith(".json")) badgeColor = "#8b5cf6";
+            else if (sc.endsWith(".txt")) badgeColor = "#f59e0b";
+            return `<span class="tag-pill" style="background:rgba(255,255,255,0.06); border:1px solid ${badgeColor}; color:#f8fafc; font-size:0.75rem;">${escapeHtml(sc)}</span>`;
+          }).join("");
+        } else {
+          sidecarsListEl.innerHTML = `<span class="text-muted" style="font-size:0.75rem;">No separate sidecar files found in directory</span>`;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("Rename preview failed:", e);
+  } finally {
+    if (spinnerEl) spinnerEl.classList.add("hidden");
+  }
+}
+
+window.openRenameModal = function(filePath, initialTitle, taskId) {
+  const modal = document.getElementById("modal-rename-clip");
+  if (!modal || !filePath) return;
+
+  currentRenameContext = { filePath, initialTitle: initialTitle || "", taskId: taskId || null };
+
+  const norm = filePath.replace(/\\/g, "/");
+  const filename = norm.split("/").pop();
+
+  const fnEl = document.getElementById("rename-modal-current-filename");
+  if (fnEl) fnEl.textContent = filename;
+
+  const pathEl = document.getElementById("rename-modal-current-path");
+  if (pathEl) pathEl.textContent = filePath;
+
+  const titleRow = document.getElementById("rename-modal-current-title-row");
+  const titleEl = document.getElementById("rename-modal-current-title");
+  if (initialTitle) {
+    if (titleRow) titleRow.classList.remove("hidden");
+    if (titleEl) titleEl.textContent = initialTitle;
+  } else {
+    if (titleRow) titleRow.classList.add("hidden");
+  }
+
+  // Pre-fill input
+  const inputEl = document.getElementById("rename-modal-input");
+  if (inputEl) {
+    const dotIdx = filename.lastIndexOf(".");
+    const stem = dotIdx !== -1 ? filename.substring(0, dotIdx) : filename;
+    inputEl.value = initialTitle || stem;
+  }
+
+  // Reset mode to title
+  const rTemplate = document.getElementById("rename-mode-template");
+  if (rTemplate) rTemplate.checked = true;
+
+  // Options default checked
+  const optSidecars = document.getElementById("rename-opt-sidecars");
+  if (optSidecars) optSidecars.checked = true;
+  const optMeta = document.getElementById("rename-opt-metadata");
+  if (optMeta) optMeta.checked = true;
+
+  modal.classList.remove("hidden");
+  if (inputEl) {
+    inputEl.focus();
+    inputEl.select();
+  }
+
+  updateRenamePreview();
+};
+
+async function confirmRenameAction() {
+  if (!currentRenameContext || !currentRenameContext.filePath) return;
+  const inputEl = document.getElementById("rename-modal-input");
+  const newName = inputEl ? inputEl.value.trim() : "";
+  if (!newName) {
+    alert("Please enter a new title or filename.");
+    return;
+  }
+
+  const modeChoice = document.querySelector('input[name="rename-mode-choice"]:checked')?.value || "title";
+  const renameSidecars = document.getElementById("rename-opt-sidecars")?.checked ?? true;
+  const updateMetadata = document.getElementById("rename-opt-metadata")?.checked ?? true;
+
+  const btnConfirm = document.getElementById("btn-confirm-rename-modal");
+  const origText = btnConfirm ? btnConfirm.textContent : "💾 Confirm & Rename";
+  if (btnConfirm) {
+    btnConfirm.disabled = true;
+    btnConfirm.textContent = "⏳ Renaming...";
+  }
+
+  try {
+    const res = await fetch("/api/rename/single", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file_path: currentRenameContext.filePath,
+        new_name: newName,
+        mode: modeChoice,
+        rename_sidecars: renameSidecars,
+        update_metadata: updateMetadata,
+        task_id: currentRenameContext.taskId
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to rename file");
+    }
+
+    const data = await res.json();
+    const oldPath = currentRenameContext.filePath;
+    const newPath = data.renamed_to;
+    const newFilename = data.new_filename || (newPath ? newPath.replace(/\\/g, "/").split("/").pop() : "");
+    const sidecarsCount = (data.sidecars_renamed || []).length;
+
+    // Close rename modal
+    const modal = document.getElementById("modal-rename-clip");
+    if (modal) modal.classList.add("hidden");
+
+    showToast(`✅ Renamed to ${newFilename} (${sidecarsCount} support file${sidecarsCount === 1 ? '' : 's'} updated)`, "success");
+
+    // 1. Update Latest Result card if currently showing this file
+    const latestCard = document.getElementById("section-latest-result");
+    if (latestCard && (latestCard.dataset.filePath === oldPath || latestCard.dataset.filePath === newPath)) {
+      latestCard.dataset.filePath = newPath;
+      const fnEl = document.getElementById("latest-result-filename");
+      if (fnEl) fnEl.textContent = newFilename;
+      const titleEl = document.getElementById("latest-result-title");
+      if (titleEl && data.new_title) titleEl.textContent = data.new_title;
+
+      // Update button handlers
+      const btnModal = document.getElementById("btn-open-latest-modal");
+      if (btnModal) btnModal.onclick = () => openResultsModal(newPath);
+      const btnRenameLatest = document.getElementById("btn-rename-latest-result");
+      if (btnRenameLatest) btnRenameLatest.onclick = () => openRenameModal(newPath, data.new_title || "", currentRenameContext.taskId);
+    }
+
+    // 2. Update Results Modal if open and showing this file
+    const resModal = document.getElementById("modal-results");
+    if (resModal && !resModal.classList.contains("hidden") && (currentModalVideoPath === oldPath || currentModalVideoPath === newPath)) {
+      currentModalVideoPath = newPath;
+      const rFn = document.getElementById("results-modal-filename");
+      if (rFn) rFn.textContent = newFilename;
+      const rTitle = document.getElementById("results-display-title");
+      if (rTitle && data.new_title) rTitle.textContent = data.new_title;
+      const rSug = document.getElementById("results-suggested-name");
+      if (rSug) rSug.textContent = newFilename;
+      try {
+        await openResultsModal(newPath);
+      } catch (_) {}
+    }
+
+    // 3. Update Scanned Videos list in memory if present
+    const scannedItem = scannedVideos.find(v => v.path === oldPath || v.path === newPath);
+    if (scannedItem) {
+      scannedItem.path = newPath;
+      scannedItem.filename = newFilename;
+      scannedItem.name = newFilename;
+      renderScannedTable();
+    }
+
+    // 4. Poll / refresh queue status
+    await pollStatus();
+
+  } catch (err) {
+    alert("Error renaming video: " + err.message);
+  } finally {
+    if (btnConfirm) {
+      btnConfirm.disabled = false;
+      btnConfirm.textContent = origText;
+    }
+  }
+}
+
 

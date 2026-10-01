@@ -160,6 +160,43 @@ class QueueManager:
             self.log(f"Cleared {removed} completed task(s) from queue.")
             return removed
 
+    def update_task_rename(
+        self,
+        old_path: str,
+        new_path: str,
+        new_title: Optional[str] = None,
+        sidecars_moved: Optional[List[Dict[str, str]]] = None,
+        task_id: Optional[str] = None
+    ) -> Optional[TaskItem]:
+        """Update in-memory queue tasks if a video file is manually renamed."""
+        with self._lock:
+            resolved_old = str(Path(old_path).resolve())
+            target_task = None
+            for t in self.queue:
+                if (task_id and t.id == task_id) or str(Path(t.file_path).resolve()) == resolved_old:
+                    target_task = t
+                    break
+
+            if not target_task and self.current_task:
+                if (task_id and self.current_task.id == task_id) or str(Path(self.current_task.file_path).resolve()) == resolved_old:
+                    target_task = self.current_task
+
+            if target_task:
+                target_task.file_path = str(Path(new_path).resolve())
+                target_task.filename = Path(new_path).name
+                if target_task.result:
+                    if new_title:
+                        target_task.result["title"] = new_title
+                    target_task.result["suggested_filename"] = Path(new_path).name
+                    target_task.result["final_file_path"] = str(Path(new_path).resolve())
+                    if sidecars_moved:
+                        moved_map = {m["from"]: m["to"] for m in sidecars_moved}
+                        if "sidecars" in target_task.result and isinstance(target_task.result["sidecars"], list):
+                            target_task.result["sidecars"] = [moved_map.get(s, s) for s in target_task.result["sidecars"]]
+                self.log(f"Manually renamed {Path(old_path).name} -> {target_task.filename}", task_id=target_task.id)
+                return target_task
+        return None
+
     def get_status(self) -> Dict[str, Any]:
         with self._lock:
             total = len(self.queue)

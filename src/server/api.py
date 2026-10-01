@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 from pathlib import Path
@@ -86,6 +87,21 @@ class RenameExecuteRequest(BaseModel):
     original_path: str
     new_filename: str
     new_creation_date: Optional[str] = None
+
+class SingleRenamePreviewRequest(BaseModel):
+    file_path: str
+    new_name: str
+    mode: str = "title"  # "title" or "filename"
+    template: Optional[str] = None
+
+class SingleRenameRequest(BaseModel):
+    file_path: str
+    new_name: str
+    mode: str = "title"  # "title" or "filename"
+    rename_sidecars: bool = True
+    update_metadata: bool = True
+    template: Optional[str] = None
+    task_id: Optional[str] = None
 
 
 class TagRequest(BaseModel):
@@ -1246,6 +1262,117 @@ def apply_rename(req: RenameExecuteRequest):
     if not orig.exists():
         raise HTTPException(status_code=404, detail="Original file not found")
     res = execute_rename(orig, req.new_filename, new_creation_date=req.new_creation_date)
+    return res
+
+@router.post("/rename/single/preview")
+def preview_single_rename(req: SingleRenamePreviewRequest):
+    orig = Path(req.file_path)
+    if not orig.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {orig}")
+
+    cfg = load_config()
+    template = req.template or cfg.rename_template
+
+    from src.media.renamer import generate_suggested_name
+
+    clean_name = req.new_name.strip()
+    if not clean_name:
+        clean_name = orig.stem
+
+    if req.mode == "title":
+        target_filename = generate_suggested_name(
+            original_path=orig,
+            ai_title=clean_name,
+            template=template,
+            suggested_slug=clean_name,
+            collection_name=orig.parent.name if orig.parent else "",
+            max_title_length=getattr(cfg, "max_title_length", 50),
+            include_names_in_title=getattr(cfg, "include_names_in_title", False),
+            date_source="smart"
+        )
+    else:
+        # Exact filename mode
+        sanitized = re.sub(r'[\\/*?:"<>|]', "", clean_name).strip()
+        if not sanitized.lower().endswith(orig.suffix.lower()):
+            sanitized = f"{sanitized}{orig.suffix}"
+        target_filename = sanitized
+
+    # Check sidecars that exist
+    VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".flv"}
+    parent = orig.parent
+    old_stem = orig.stem
+    old_name = orig.name
+    sidecars_found = []
+    seen = set()
+    for candidate in parent.iterdir():
+        if candidate == orig or not candidate.is_file() or candidate.suffix.lower() in VIDEO_EXTENSIONS or candidate in seen:
+            continue
+        cand_name = candidate.name
+        if cand_name.startswith(old_name) or cand_name.startswith(f"{old_stem}."):
+            sidecars_found.append(cand_name)
+            seen.add(candidate)
+
+    return {
+        "original_filename": orig.name,
+        "target_filename": target_filename,
+        "sidecars_found": sorted(sidecars_found),
+        "target_path": str(orig.parent / target_filename)
+    }
+
+@router.post("/rename/single")
+def execute_single_rename(req: SingleRenameRequest):
+    orig = Path(req.file_path)
+    if not orig.exists():
+        raise HTTPException(status_code=404, detail=f"Original file not found: {orig}")
+
+    cfg = load_config()
+    template = req.template or cfg.rename_template
+
+    from src.media.renamer import generate_suggested_name
+
+    clean_name = req.new_name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="New name or title cannot be empty")
+
+    new_title = clean_name
+    if req.mode == "title":
+        target_filename = generate_suggested_name(
+            original_path=orig,
+            ai_title=clean_name,
+            template=template,
+            suggested_slug=clean_name,
+            collection_name=orig.parent.name if orig.parent else "",
+            max_title_length=getattr(cfg, "max_title_length", 50),
+            include_names_in_title=getattr(cfg, "include_names_in_title", False),
+            date_source="smart"
+        )
+    else:
+        # Exact filename mode
+        sanitized = re.sub(r'[\\/*?:"<>|]', "", clean_name).strip()
+        if not sanitized.lower().endswith(orig.suffix.lower()):
+            sanitized = f"{sanitized}{orig.suffix}"
+        target_filename = sanitized
+
+    res = execute_rename(
+        original_path=orig,
+        new_filename=target_filename,
+        rename_sidecars=req.rename_sidecars,
+        new_title=new_title if req.update_metadata else None
+    )
+
+    if res.get("status") == "success":
+        new_path = res.get("renamed_to", str(orig))
+        res["new_filename"] = Path(new_path).name
+        res["new_title"] = new_title
+        # Update QueueManager records
+        manager.update_task_rename(
+            old_path=str(orig),
+            new_path=new_path,
+            new_title=new_title,
+            sidecars_moved=res.get("sidecars_renamed", []),
+            task_id=req.task_id
+        )
+
     return res
 
 @router.post("/rename/undo")

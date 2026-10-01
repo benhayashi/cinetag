@@ -362,7 +362,8 @@ def execute_rename(
     original_path: Path,
     new_filename: str,
     rename_sidecars: bool = True,
-    new_creation_date: Optional[str] = None
+    new_creation_date: Optional[str] = None,
+    new_title: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Safely rename a video and its accompanying sidecar files with collision checks.
@@ -384,7 +385,47 @@ def execute_rename(
             counter += 1
         target_path = parent / f"{base_stem}_{counter:02d}{ext}"
 
+    VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".flv"}
+
     if target_path == original_path:
+        # If target filename is identical but new_title is provided, update sidecar metadata
+        if new_title:
+            old_stem = original_path.stem
+            old_name = original_path.name
+            for candidate in parent.iterdir():
+                if candidate == original_path or not candidate.is_file() or candidate.suffix.lower() in VIDEO_EXTENSIONS:
+                    continue
+                cand_name = candidate.name
+                if cand_name.startswith(old_name) or cand_name.startswith(f"{old_stem}."):
+                    if cand_name.endswith(".info.json"):
+                        try:
+                            with open(candidate, "r", encoding="utf-8") as jf:
+                                jdata = json.load(jf)
+                            if "analysis" in jdata and isinstance(jdata["analysis"], dict):
+                                jdata["analysis"]["title"] = new_title
+                            with open(candidate, "w", encoding="utf-8") as jf:
+                                json.dump(jdata, jf, indent=2, ensure_ascii=False)
+                        except Exception:
+                            pass
+                    elif cand_name.endswith(".txt"):
+                        try:
+                            content = candidate.read_text(encoding="utf-8")
+                            lines = content.splitlines()
+                            if lines and ("—" in lines[0] or " - " in lines[0]):
+                                lines[0] = f"{target_path.name} — {new_title}"
+                                candidate.write_text("\n".join(lines), encoding="utf-8")
+                        except Exception:
+                            pass
+                    elif cand_name.endswith(".nfo"):
+                        try:
+                            content = candidate.read_text(encoding="utf-8")
+                            if "<title>" in content:
+                                import re
+                                content = re.sub(r"<title>.*?</title>", f"<title>{new_title}</title>", content, count=1)
+                                candidate.write_text(content, encoding="utf-8")
+                        except Exception:
+                            pass
+            return {"status": "success", "original": str(original_path), "renamed_to": str(target_path), "sidecars_renamed": [], "message": "Metadata updated"}
         return {"status": "skipped", "message": "Filename is identical"}
 
     # Find associated sidecar files (e.g. filename.ext.txt, filename.info.json, filename.srt, etc.)
@@ -398,6 +439,8 @@ def execute_rename(
 
         for candidate in parent.iterdir():
             if candidate == original_path or not candidate.is_file() or candidate in seen_candidates:
+                continue
+            if candidate.suffix.lower() in VIDEO_EXTENSIONS:
                 continue
             cand_name = candidate.name
             if cand_name.startswith(old_name):
@@ -418,10 +461,15 @@ def execute_rename(
     sidecars_moved = []
     for old_s, new_s in sidecar_renames:
         if old_s.exists():
+            if new_s.exists() and new_s.resolve() != old_s.resolve():
+                try:
+                    new_s.unlink()
+                except Exception:
+                    pass
             old_s.rename(new_s)
             sidecars_moved.append({"from": str(old_s), "to": str(new_s)})
 
-    # Update sidecar metadata in .info.json if present
+    # Update sidecar metadata in .info.json, .txt, .nfo if present
     for old_s, new_s in sidecar_renames:
         if new_s.name.endswith(".info.json") and new_s.exists():
             try:
@@ -434,10 +482,33 @@ def execute_rename(
                         if "metadata" not in jdata["file"] or not isinstance(jdata["file"]["metadata"], dict):
                             jdata["file"]["metadata"] = {}
                         jdata["file"]["metadata"]["creation_time"] = new_creation_date
+                if new_title and "analysis" in jdata and isinstance(jdata["analysis"], dict):
+                    jdata["analysis"]["title"] = new_title
+                    jdata["analysis"]["suggested_filename"] = target_path.name
                 with open(new_s, "w", encoding="utf-8") as jf:
                     json.dump(jdata, jf, indent=2, ensure_ascii=False)
             except Exception as je:
                 logger.warning(f"Could not update {new_s.name} metadata: {je}")
+
+        if (new_s.name.endswith(".txt") or new_s.name.endswith(".txt.txt")) and new_s.exists() and new_title:
+            try:
+                content = new_s.read_text(encoding="utf-8")
+                lines = content.splitlines()
+                if lines and ("—" in lines[0] or " - " in lines[0]):
+                    lines[0] = f"{target_path.name} — {new_title}"
+                    new_s.write_text("\n".join(lines), encoding="utf-8")
+            except Exception as e:
+                logger.warning(f"Could not update title in {new_s.name}: {e}")
+
+        if new_s.name.endswith(".nfo") and new_s.exists() and new_title:
+            try:
+                content = new_s.read_text(encoding="utf-8")
+                if "<title>" in content:
+                    import re
+                    content = re.sub(r"<title>.*?</title>", f"<title>{new_title}</title>", content, count=1)
+                    new_s.write_text(content, encoding="utf-8")
+            except Exception as e:
+                logger.warning(f"Could not update title in {new_s.name}: {e}")
 
     # Log to rename history journal
     history_file = get_history_path() / "renames.json"
