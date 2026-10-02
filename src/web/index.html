@@ -734,7 +734,11 @@
               <div class="form-group">
                 <label for="cfg-openai-url">Server Base URL</label>
                 <input type="text" id="cfg-openai-url" class="form-control" value="http://localhost:1234/v1">
-                <small class="helper-text">LM Studio or LocalAI server endpoint.</small>
+                <small class="helper-text">LM Studio, LocalAI, vLLM, or any local/networked OpenAI-compatible server endpoint.</small>
+              </div>
+              <div class="form-group">
+                <label for="cfg-openai-api-key">API Key (Optional for Local)</label>
+                <input type="password" id="cfg-openai-api-key" class="form-control" placeholder="Optional for local (e.g. lm-studio), required for authenticated servers">
               </div>
               <div class="form-group">
                 <label for="cfg-openai-model">Model Name</label>
@@ -742,22 +746,54 @@
                   <input type="text" id="cfg-openai-model" class="form-control" value="local-model">
                   <button id="btn-test-openai" class="btn btn-secondary">Test Connection</button>
                 </div>
+                <div id="openai-test-status" class="mt-2 text-muted" style="font-size: 0.85rem; font-weight: 500;"></div>
               </div>
             </div>
 
-            <!-- Cloud Fallback Section -->
+            <!-- Cloud Provider Section (OpenAI Standards, Gemini, Claude, OpenRouter, Custom) -->
             <div id="section-cloud" class="provider-section hidden">
               <div class="form-group">
-                <label for="cfg-cloud-provider">Cloud Provider</label>
+                <label for="cfg-cloud-provider">Cloud Provider Standard</label>
                 <select id="cfg-cloud-provider" class="form-control">
                   <option value="gemini">Google Gemini</option>
+                  <option value="openai">OpenAI (Official GPT-4o / o1)</option>
                   <option value="anthropic">Anthropic Claude</option>
-                  <option value="openai">OpenAI GPT-4o</option>
+                  <option value="openrouter">OpenRouter (Multi-Model Cloud)</option>
+                  <option value="custom_openai">Custom OpenAI-Standard Endpoint (Groq / Together / DeepSeek / etc.)</option>
                 </select>
               </div>
+
+              <div id="cfg-cloud-endpoint-group" class="form-group hidden">
+                <label for="cfg-cloud-endpoint">Custom Endpoint Base URL</label>
+                <input type="text" id="cfg-cloud-endpoint" class="form-control" placeholder="https://api.groq.com/openai/v1">
+                <small class="helper-text">Base URL of any cloud API conforming to the OpenAI standard (e.g. <code>https://openrouter.ai/api/v1</code>, <code>https://api.groq.com/openai/v1</code>, <code>https://api.together.xyz/v1</code>, <code>https://api.deepseek.com/v1</code>).</small>
+              </div>
+
               <div class="form-group">
-                <label for="cfg-cloud-key">API Key</label>
-                <input type="password" id="cfg-cloud-key" class="form-control" placeholder="sk-...">
+                <label for="cfg-cloud-model">Cloud Vision & LLM Model</label>
+                <input type="text" id="cfg-cloud-model" class="form-control" list="cloud-models-list" placeholder="e.g. gemini-2.5-flash or gpt-4o">
+                <datalist id="cloud-models-list">
+                  <option value="gemini-2.5-flash">Google Gemini 2.5 Flash</option>
+                  <option value="gemini-2.5-pro">Google Gemini 2.5 Pro</option>
+                  <option value="gemini-2.0-flash">Google Gemini 2.0 Flash</option>
+                  <option value="gpt-4o">OpenAI GPT-4o</option>
+                  <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
+                  <option value="claude-3-5-sonnet-20241022">Anthropic Claude 3.5 Sonnet</option>
+                  <option value="claude-3-7-sonnet-20250219">Anthropic Claude 3.7 Sonnet</option>
+                  <option value="google/gemini-2.5-flash">OpenRouter: Gemini 2.5 Flash</option>
+                  <option value="openai/gpt-4o">OpenRouter: GPT-4o</option>
+                  <option value="qwen/qwen-2.5-vl-72b-instruct">OpenRouter: Qwen 2.5 VL 72B</option>
+                </datalist>
+                <small class="helper-text">Model identifier to use for video frame vision analysis & description.</small>
+              </div>
+
+              <div class="form-group">
+                <label for="cfg-cloud-key">API Key / Bearer Token</label>
+                <div class="input-with-button">
+                  <input type="password" id="cfg-cloud-key" class="form-control" placeholder="API Key (e.g. sk-...)">
+                  <button id="btn-test-cloud" class="btn btn-secondary">Test Connection</button>
+                </div>
+                <div id="cloud-test-status" class="mt-2 text-muted" style="font-size: 0.85rem; font-weight: 500;"></div>
               </div>
             </div>
           </div>

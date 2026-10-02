@@ -127,7 +127,9 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  justify-content: flex-end;
 }
 
 .status-badge {
@@ -138,9 +140,23 @@ body {
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
+  gap: 0.35rem;
+  max-width: clamp(130px, 20vw, 320px);
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+  transition: max-width 0.25s ease, background-color 0.2s ease, border-color 0.2s ease;
 }
+
+.status-badge:hover {
+  max-width: clamp(220px, 35vw, 480px);
+}
+
 .status-badge.connected { background-color: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid #059669; }
 .status-badge.checking { background-color: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid #d97706; }
+.status-badge.warning { background-color: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid #d97706; }
 .status-badge.error { background-color: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #dc2626; }
 
 /* Main Content */
@@ -1382,8 +1398,8 @@ body {
 
 /* --- Responsive Header & Mobile (@media queries) --- */
 
-/* Intermediate Desktop / Laptop / Half-Screen Snapped Windows (<= 1200px) */
-@media (max-width: 1200px) {
+/* Intermediate Desktop / Laptop / Half-Screen Snapped Windows (<= 1280px) */
+@media (max-width: 1280px) {
   .app-header {
     padding: 0.75rem 1.25rem;
     gap: 0.75rem;
@@ -1398,11 +1414,12 @@ body {
   .status-badge {
     padding: 0.3rem 0.6rem;
     font-size: 0.72rem;
+    max-width: clamp(120px, 18vw, 260px);
   }
 }
 
-/* Tablet / Compact Desktop (<= 992px) */
-@media (max-width: 992px) {
+/* Tablet / Compact Desktop / Snapped Windows (<= 1140px) */
+@media (max-width: 1140px) {
   .app-header {
     flex-wrap: wrap;
     gap: 0.75rem 1rem;
@@ -1415,6 +1432,13 @@ body {
   .header-status {
     order: 2;
     margin-left: auto;
+    max-width: 60%;
+    min-width: 0;
+  }
+  .status-badge {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.72rem;
+    max-width: clamp(120px, 28vw, 300px);
   }
   .nav-tabs {
     order: 3;
@@ -1455,10 +1479,13 @@ body {
     order: 2;
     margin-left: auto;
     gap: 0.35rem;
+    max-width: 58%;
+    min-width: 0;
   }
   .status-badge {
     font-size: 0.68rem;
     padding: 0.25rem 0.5rem;
+    max-width: clamp(90px, 26vw, 180px);
   }
   .nav-tabs {
     order: 3;

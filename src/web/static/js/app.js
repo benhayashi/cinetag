@@ -1591,11 +1591,24 @@ async function loadConfig() {
     
     document.getElementById("cfg-openai-url").value = cfg.openai_compatible_url || "http://localhost:1234/v1";
     document.getElementById("cfg-openai-model").value = cfg.openai_compatible_model || "local-model";
+    const openaiApiKeyEl = document.getElementById("cfg-openai-api-key");
+    if (openaiApiKeyEl) openaiApiKeyEl.value = cfg.openai_compatible_api_key || "";
     
-    document.getElementById("cfg-cloud-provider").value = cfg.cloud_provider || "gemini";
+    const cloudProvEl = document.getElementById("cfg-cloud-provider");
+    if (cloudProvEl) cloudProvEl.value = cfg.cloud_provider || "gemini";
+    
+    const cloudEndpointEl = document.getElementById("cfg-cloud-endpoint");
+    if (cloudEndpointEl) cloudEndpointEl.value = cfg.cloud_endpoint || "";
+
+    const cloudModelEl = document.getElementById("cfg-cloud-model");
+    if (cloudModelEl) cloudModelEl.value = cfg.cloud_model || "gemini-2.5-flash";
+
     if (cfg.api_keys) {
-      document.getElementById("cfg-cloud-key").value = cfg.api_keys[cfg.cloud_provider] || "";
+      const activeKey = cfg.api_keys[cfg.cloud_provider] || cfg.api_keys["custom"] || "";
+      const cloudKeyEl = document.getElementById("cfg-cloud-key");
+      if (cloudKeyEl) cloudKeyEl.value = activeKey;
     }
+    updateCloudProviderUI(cfg.cloud_provider || "gemini");
     const transcribeAudioEl = document.getElementById("cfg-transcribe-audio");
     if (transcribeAudioEl) transcribeAudioEl.checked = cfg.transcribe_audio !== false;
 
@@ -2006,33 +2019,119 @@ function initSettings() {
   });
 
   // OpenAI / LM Studio test button
-  document.getElementById("btn-test-openai").addEventListener("click", async () => {
-    const btn = document.getElementById("btn-test-openai");
-    btn.disabled = true;
-    btn.textContent = "Connecting...";
+  const btnTestOpenai = document.getElementById("btn-test-openai");
+  if (btnTestOpenai) {
+    btnTestOpenai.addEventListener("click", async () => {
+      btnTestOpenai.disabled = true;
+      btnTestOpenai.textContent = "Connecting...";
+      const statusEl = document.getElementById("openai-test-status");
+      if (statusEl) statusEl.textContent = "Testing connection...";
 
-    try {
-      const res = await fetch("/api/models/openai");
-      const data = await res.json();
-      if (data.connected) {
-        alert(`LM Studio / OpenAI server connected successfully! Found ${data.models.length} model(s).`);
-      } else {
-        alert(`Could not connect to server at ${data.url}.`);
+      try {
+        const url = document.getElementById("cfg-openai-url")?.value.trim() || "";
+        const key = document.getElementById("cfg-openai-api-key")?.value.trim() || "";
+        const res = await fetch(`/api/models/openai?url=${encodeURIComponent(url)}&api_key=${encodeURIComponent(key)}`);
+        const data = await res.json();
+        if (data.connected) {
+          if (statusEl) {
+            statusEl.style.color = "#34d399";
+            statusEl.textContent = `✓ Connected (${data.models.length} model(s) detected)`;
+          }
+          alert(`Server connected successfully! Found ${data.models.length} model(s).`);
+        } else {
+          if (statusEl) {
+            statusEl.style.color = "#f87171";
+            statusEl.textContent = `✗ Could not connect to ${data.url}`;
+          }
+          alert(`Could not connect to server at ${data.url}.`);
+        }
+      } catch (e) {
+        if (statusEl) {
+          statusEl.style.color = "#f87171";
+          statusEl.textContent = `✗ Error: ${e.message}`;
+        }
+        alert("Connection test error: " + e.message);
+      } finally {
+        btnTestOpenai.disabled = false;
+        btnTestOpenai.textContent = "Test Connection";
+        checkAIHealth();
       }
-    } catch (e) {
-      alert("Connection test error: " + e.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Test Connection";
+    });
+  }
+
+  // Cloud Provider test button
+  const btnTestCloud = document.getElementById("btn-test-cloud");
+  if (btnTestCloud) {
+    btnTestCloud.addEventListener("click", async () => {
+      btnTestCloud.disabled = true;
+      btnTestCloud.textContent = "Connecting...";
+      const statusEl = document.getElementById("cloud-test-status");
+      if (statusEl) statusEl.textContent = "Testing cloud connection...";
+
+      try {
+        const prov = document.getElementById("cfg-cloud-provider")?.value || "gemini";
+        const key = document.getElementById("cfg-cloud-key")?.value.trim() || "";
+        const model = document.getElementById("cfg-cloud-model")?.value.trim() || "";
+        const endpoint = document.getElementById("cfg-cloud-endpoint")?.value.trim() || "";
+
+        const res = await fetch("/api/models/cloud/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: prov, api_key: key, model: model, endpoint: endpoint })
+        });
+        const data = await res.json();
+        if (data.connected) {
+          if (statusEl) {
+            statusEl.style.color = "#34d399";
+            statusEl.textContent = `✓ Connected to ${data.provider} (${data.models?.length || 0} models verified)`;
+          }
+          alert(`✓ Cloud API Connected! (${data.provider})\nVerified with ${data.models?.length || 0} available models.`);
+        } else {
+          if (statusEl) {
+            statusEl.style.color = "#f87171";
+            statusEl.textContent = `✗ ${data.error || "Connection failed"}`;
+          }
+          alert(`Could not connect to ${prov}: ${data.error || "Connection failed"}`);
+        }
+      } catch (e) {
+        if (statusEl) {
+          statusEl.style.color = "#f87171";
+          statusEl.textContent = `✗ Error: ${e.message}`;
+        }
+        alert("Cloud test error: " + e.message);
+      } finally {
+        btnTestCloud.disabled = false;
+        btnTestCloud.textContent = "Test Connection";
+        checkAIHealth();
+      }
+    });
+  }
+
+  // Cloud provider change handler
+  const cloudProvSelect = document.getElementById("cfg-cloud-provider");
+  if (cloudProvSelect) {
+    cloudProvSelect.addEventListener("change", () => {
+      updateCloudProviderUI(cloudProvSelect.value);
       checkAIHealth();
-    }
-  });
+    });
+  }
 
   // Save Config
   document.getElementById("btn-save-config").addEventListener("click", async () => {
     const visionProv = document.getElementById("cfg-vision-provider").value;
-    const cloudProv = document.getElementById("cfg-cloud-provider").value;
-    const cloudKey = document.getElementById("cfg-cloud-key").value;
+    const cloudProv = document.getElementById("cfg-cloud-provider")?.value || "gemini";
+    const cloudKey = document.getElementById("cfg-cloud-key")?.value || "";
+    const cloudModel = document.getElementById("cfg-cloud-model")?.value.trim() || "gemini-2.5-flash";
+    const cloudEndpoint = document.getElementById("cfg-cloud-endpoint")?.value.trim() || "";
+    const openAiApiKey = document.getElementById("cfg-openai-api-key")?.value.trim() || "";
+
+    const mergedApiKeys = {
+      ...(currentAppConfig?.api_keys || {}),
+      [cloudProv]: cloudKey.trim()
+    };
+    if (cloudProv === "custom_openai") {
+      mergedApiKeys.custom = cloudKey.trim();
+    }
 
     const payload = {
       ffmpeg_path: document.getElementById("cfg-ffmpeg-path").value.trim() || null,
@@ -2042,8 +2141,12 @@ function initSettings() {
       ollama_model: document.getElementById("cfg-ollama-model").value,
       ollama_num_ctx: parseInt(document.getElementById("cfg-ollama-num-ctx")?.value || "16384", 10),
       openai_compatible_url: document.getElementById("cfg-openai-url").value.trim(),
+      openai_compatible_api_key: openAiApiKey,
       openai_compatible_model: document.getElementById("cfg-openai-model").value.trim(),
       cloud_provider: cloudProv,
+      cloud_model: cloudModel,
+      cloud_endpoint: cloudEndpoint,
+      api_keys: mergedApiKeys,
       transcribe_audio: document.getElementById("cfg-transcribe-audio")?.checked ?? true,
       whisper_translate_to_english: document.getElementById("cfg-whisper-translate-to-english")?.checked ?? false,
       whisper_task: (document.getElementById("cfg-whisper-translate-to-english")?.checked) ? "translate" : "transcribe",
@@ -2573,6 +2676,68 @@ function initSettings() {
 }
 
 
+function updateCloudProviderUI(provider) {
+  const epGroup = document.getElementById("cfg-cloud-endpoint-group");
+  const modelList = document.getElementById("cloud-models-list");
+  const modelInput = document.getElementById("cfg-cloud-model");
+  const keyInput = document.getElementById("cfg-cloud-key");
+
+  if (epGroup) {
+    if (provider === "custom_openai" || provider === "openrouter") {
+      epGroup.classList.remove("hidden");
+    } else {
+      epGroup.classList.add("hidden");
+    }
+  }
+
+  const modelMap = {
+    gemini: [
+      { val: "gemini-2.5-flash", text: "Google Gemini 2.5 Flash (Recommended)" },
+      { val: "gemini-2.5-pro", text: "Google Gemini 2.5 Pro" },
+      { val: "gemini-1.5-flash", text: "Google Gemini 1.5 Flash" },
+      { val: "gemini-2.0-flash", text: "Google Gemini 2.0 Flash" }
+    ],
+    openai: [
+      { val: "gpt-4o", text: "OpenAI GPT-4o (Recommended)" },
+      { val: "gpt-4o-mini", text: "OpenAI GPT-4o Mini (Fast)" },
+      { val: "o1", text: "OpenAI o1 Reasoning" },
+      { val: "gpt-4.5-preview", text: "OpenAI GPT-4.5 Preview" }
+    ],
+    anthropic: [
+      { val: "claude-3-5-sonnet-20241022", text: "Claude 3.5 Sonnet (Recommended)" },
+      { val: "claude-3-7-sonnet-20250219", text: "Claude 3.7 Sonnet" },
+      { val: "claude-3-5-haiku-20241022", text: "Claude 3.5 Haiku" }
+    ],
+    openrouter: [
+      { val: "google/gemini-2.5-flash", text: "OpenRouter: Gemini 2.5 Flash" },
+      { val: "openai/gpt-4o", text: "OpenRouter: GPT-4o" },
+      { val: "anthropic/claude-3.5-sonnet", text: "OpenRouter: Claude 3.5 Sonnet" },
+      { val: "qwen/qwen-2.5-vl-72b-instruct", text: "OpenRouter: Qwen 2.5 VL 72B" },
+      { val: "meta-llama/llama-3.2-11b-vision-instruct", text: "OpenRouter: Llama 3.2 Vision" }
+    ],
+    custom_openai: [
+      { val: "gpt-4o", text: "GPT-4o Standard" },
+      { val: "qwen2.5-vl", text: "Qwen 2.5 VL" },
+      { val: "llama-3.2-vision", text: "Llama 3.2 Vision" }
+    ]
+  };
+
+  if (modelList && modelMap[provider]) {
+    modelList.innerHTML = "";
+    modelMap[provider].forEach(item => {
+      const opt = document.createElement("option");
+      opt.value = item.val;
+      opt.textContent = item.text;
+      modelList.appendChild(opt);
+    });
+  }
+
+  // Update key field from currentAppConfig cache if available
+  if (currentAppConfig && currentAppConfig.api_keys && keyInput) {
+    keyInput.value = currentAppConfig.api_keys[provider] || currentAppConfig.api_keys["custom"] || "";
+  }
+}
+
 function toggleProviderSections(provider) {
   document.getElementById("section-ollama").classList.add("hidden");
   document.getElementById("section-openai").classList.add("hidden");
@@ -2584,6 +2749,8 @@ function toggleProviderSections(provider) {
     document.getElementById("section-openai").classList.remove("hidden");
   } else if (provider === "cloud") {
     document.getElementById("section-cloud").classList.remove("hidden");
+    const cloudProv = document.getElementById("cfg-cloud-provider")?.value || "gemini";
+    updateCloudProviderUI(cloudProv);
   }
 }
 
@@ -2597,6 +2764,7 @@ async function checkAIHealth() {
   try {
     const cfgRes = await fetch("/api/config");
     const cfg = await cfgRes.json();
+    currentAppConfig = cfg;
     
     if (cfg.vision_provider === "ollama") {
       if (hostEl) hostEl.textContent = cfg.ollama_url || "http://localhost:11434";
@@ -2607,7 +2775,8 @@ async function checkAIHealth() {
       if (data.connected) {
         if (badge) {
           badge.className = "status-badge connected";
-          badge.textContent = `Ollama: Online (${cfg.ollama_model})`;
+          badge.textContent = `Ollama: Online · ${cfg.ollama_model}`;
+          badge.setAttribute("title", `Ollama Vision & LLM: Online\nModel: ${cfg.ollama_model}\nHost: ${cfg.ollama_url}`);
         }
         if (stateEl) {
           stateEl.className = "badge-tag processed";
@@ -2621,6 +2790,7 @@ async function checkAIHealth() {
         if (badge) {
           badge.className = "status-badge error";
           badge.textContent = "Ollama: Offline";
+          badge.setAttribute("title", `Ollama Vision & LLM: Offline\nCannot reach ${cfg.ollama_url}`);
         }
         if (stateEl) {
           stateEl.className = "badge-tag danger";
@@ -2632,15 +2802,21 @@ async function checkAIHealth() {
         }
       }
     } else if (cfg.vision_provider === "openai_compatible") {
-      if (hostEl) hostEl.textContent = cfg.openai_compatible_url || "http://localhost:1234/v1";
-      if (modelEl) modelEl.textContent = cfg.openai_compatible_model || "local-model";
+      const url = cfg.openai_compatible_url || "http://localhost:1234/v1";
+      const model = cfg.openai_compatible_model || "local-model";
+      const isLMStudio = url.includes("1234");
+      const provLabel = isLMStudio ? "LM Studio" : "OpenAI API";
 
-      const res = await fetch("/api/models/openai");
+      if (hostEl) hostEl.textContent = url;
+      if (modelEl) modelEl.textContent = model;
+
+      const res = await fetch(`/api/models/openai?url=${encodeURIComponent(url)}&api_key=${encodeURIComponent(cfg.openai_compatible_api_key || "")}`);
       const data = await res.json();
       if (data.connected) {
         if (badge) {
           badge.className = "status-badge connected";
-          badge.textContent = "LM Studio: Online";
+          badge.textContent = `${provLabel}: Online · ${model}`;
+          badge.setAttribute("title", `${provLabel} Vision & LLM: Online\nModel: ${model}\nEndpoint: ${url}`);
         }
         if (stateEl) {
           stateEl.className = "badge-tag processed";
@@ -2648,12 +2824,13 @@ async function checkAIHealth() {
         }
         if (livePill) {
           livePill.className = "badge-tag processed";
-          livePill.textContent = "✓ LM Studio Connected";
+          livePill.textContent = `✓ ${provLabel} Connected`;
         }
       } else {
         if (badge) {
           badge.className = "status-badge error";
-          badge.textContent = "LM Studio: Offline";
+          badge.textContent = `${provLabel}: Offline`;
+          badge.setAttribute("title", `${provLabel} Vision & LLM: Offline\nCannot reach ${url}`);
         }
         if (stateEl) {
           stateEl.className = "badge-tag danger";
@@ -2661,29 +2838,63 @@ async function checkAIHealth() {
         }
         if (livePill) {
           livePill.className = "badge-tag danger";
-          livePill.textContent = "✗ LM Studio Offline";
+          livePill.textContent = `✗ ${provLabel} Offline`;
         }
       }
-    } else {
-      if (hostEl) hostEl.textContent = `Cloud (${cfg.cloud_provider})`;
-      if (modelEl) modelEl.textContent = "Default Cloud Model";
-      if (badge) {
-        badge.className = "status-badge connected";
-        badge.textContent = `Cloud: ${cfg.cloud_provider}`;
-      }
-      if (stateEl) {
-        stateEl.className = "badge-tag processed";
-        stateEl.textContent = "Configured";
-      }
-      if (livePill) {
-        livePill.className = "badge-tag processed";
-        livePill.textContent = `Cloud (${cfg.cloud_provider})`;
+    } else if (cfg.vision_provider === "cloud") {
+      const cloudMap = {
+        gemini: "Gemini",
+        openai: "OpenAI",
+        anthropic: "Claude",
+        openrouter: "OpenRouter",
+        custom_openai: "Cloud API"
+      };
+      const provKey = (cfg.cloud_provider || "gemini").toLowerCase();
+      const cloudLabel = cloudMap[provKey] || provKey.toUpperCase();
+      const activeModel = cfg.cloud_model || "gemini-2.5-flash";
+      const endpoint = cfg.cloud_endpoint || "";
+
+      if (hostEl) hostEl.textContent = endpoint ? `${cloudLabel} (${endpoint})` : `Cloud (${cloudLabel})`;
+      if (modelEl) modelEl.textContent = activeModel;
+
+      const res = await fetch("/api/models/cloud");
+      const data = await res.json();
+      if (data.connected) {
+        if (badge) {
+          badge.className = "status-badge connected";
+          badge.textContent = `${cloudLabel}: Ready · ${activeModel}`;
+          badge.setAttribute("title", `Cloud Vision & LLM (${cloudLabel}): Ready\nModel: ${activeModel}${endpoint ? '\nEndpoint: ' + endpoint : ''}`);
+        }
+        if (stateEl) {
+          stateEl.className = "badge-tag processed";
+          stateEl.textContent = "Online (Verified)";
+        }
+        if (livePill) {
+          livePill.className = "badge-tag processed";
+          livePill.textContent = `✓ ${cloudLabel} Ready`;
+        }
+      } else {
+        const isKeyMissing = data.error && data.error.includes("missing");
+        if (badge) {
+          badge.className = isKeyMissing ? "status-badge warning" : "status-badge error";
+          badge.textContent = isKeyMissing ? `${cloudLabel}: Key Needed` : `${cloudLabel}: Error`;
+          badge.setAttribute("title", `Cloud Vision & LLM (${cloudLabel}): ${data.error || 'Connection failed'}`);
+        }
+        if (stateEl) {
+          stateEl.className = isKeyMissing ? "badge-tag warning" : "badge-tag danger";
+          stateEl.textContent = isKeyMissing ? "API Key Missing" : "Connection Error";
+        }
+        if (livePill) {
+          livePill.className = isKeyMissing ? "badge-tag warning" : "badge-tag danger";
+          livePill.textContent = isKeyMissing ? `⚠️ ${cloudLabel} Key Needed` : `✗ ${cloudLabel} Error`;
+        }
       }
     }
   } catch (e) {
     if (badge) {
       badge.className = "status-badge error";
       badge.textContent = "AI: Error";
+      badge.setAttribute("title", `AI Status Error: ${e.message}`);
     }
     if (stateEl) {
       stateEl.className = "badge-tag danger";

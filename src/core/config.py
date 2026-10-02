@@ -23,11 +23,15 @@ class AppConfig(BaseModel):
     openai_compatible_api_key: str = Field(default="lm-studio")
     openai_compatible_model: str = Field(default="local-model")
     
-    cloud_provider: str = Field(default="gemini", description="gemini | anthropic | openai")
+    cloud_provider: str = Field(default="gemini", description="gemini | openai | anthropic | openrouter | custom_openai")
+    cloud_model: str = Field(default="gemini-2.5-flash", description="Model identifier for cloud vision & LLM inference")
+    cloud_endpoint: Optional[str] = Field(default="", description="Custom OpenAI-standard API base URL (e.g. https://openrouter.ai/api/v1 or https://api.groq.com/openai/v1)")
     api_keys: Dict[str, str] = Field(default_factory=lambda: {
         "gemini": "",
+        "openai": "",
         "anthropic": "",
-        "openai": ""
+        "openrouter": "",
+        "custom": ""
     })
 
     # AI Prompt Guidance & Description Tuning

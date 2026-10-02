@@ -31,6 +31,7 @@ from src.media.ffmpeg_installer import check_ffmpeg_status, install_standalone_f
 from src.media.faces import face_registry
 from src.ai.ollama_provider import OllamaVisionProvider
 from src.ai.openai_provider import OpenAICompatibleVisionProvider
+from src.ai.cloud_provider import CloudVisionProvider
 from src.ai.whisper_service import WhisperTranscriptionService
 from src.server.queue_manager import manager
 
@@ -931,19 +932,65 @@ def list_ollama_models():
     }
 
 @router.get("/models/openai")
-def list_openai_models():
+def list_openai_models(url: Optional[str] = None, api_key: Optional[str] = None):
     cfg = load_config()
+    target_url = (url or cfg.openai_compatible_url).rstrip("/")
+    target_key = api_key if api_key is not None else cfg.openai_compatible_api_key
     provider = OpenAICompatibleVisionProvider(
-        base_url=cfg.openai_compatible_url,
-        api_key=cfg.openai_compatible_api_key
+        base_url=target_url,
+        api_key=target_key
     )
     available = provider.is_available()
     models = provider.list_models() if available else []
     return {
         "connected": available,
-        "url": cfg.openai_compatible_url,
+        "url": target_url,
         "models": models
     }
+
+class CloudProbeRequest(BaseModel):
+    provider: Optional[str] = "gemini"
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    endpoint: Optional[str] = None
+
+@router.get("/models/cloud")
+def check_cloud_model_status():
+    """Check connectivity and model availability for the configured cloud provider."""
+    cfg = load_config()
+    provider = CloudVisionProvider(
+        provider=cfg.cloud_provider,
+        api_keys=cfg.api_keys,
+        default_model=cfg.cloud_model,
+        custom_endpoint=cfg.cloud_endpoint
+    )
+    result = provider.probe_connection(
+        model=cfg.cloud_model,
+        endpoint=cfg.cloud_endpoint
+    )
+    return result
+
+@router.post("/models/cloud/test")
+def test_cloud_connection(req: CloudProbeRequest):
+    """Test cloud API connectivity and key validity dynamically from Settings."""
+    cfg = load_config()
+    prov_name = (req.provider or cfg.cloud_provider or "gemini").lower()
+    key = req.api_key if req.api_key is not None else (cfg.api_keys.get(prov_name) or cfg.api_keys.get("custom") or "")
+    active_model = req.model or cfg.cloud_model
+    active_endpoint = req.endpoint or cfg.cloud_endpoint
+
+    provider = CloudVisionProvider(
+        provider=prov_name,
+        api_keys={prov_name: key, "custom": key},
+        default_model=active_model,
+        custom_endpoint=active_endpoint
+    )
+    return provider.probe_connection(
+        provider=prov_name,
+        api_key=key,
+        model=active_model,
+        endpoint=active_endpoint
+    )
 
 class WhisperRemoteProbeRequest(BaseModel):
     url: str

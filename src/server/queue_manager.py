@@ -472,12 +472,15 @@ class QueueManager:
             elif cfg.vision_provider == "cloud":
                 provider = CloudVisionProvider(
                     provider=cfg.cloud_provider,
-                    api_keys=cfg.api_keys
+                    api_keys=cfg.api_keys,
+                    default_model=getattr(cfg, "cloud_model", None),
+                    custom_endpoint=getattr(cfg, "cloud_endpoint", None)
                 )
                 analysis = provider.describe_video(
                     frames,
                     audio_transcript=transcript,
                     context_prompt=extra_ctx,
+                    model=getattr(cfg, "cloud_model", None),
                     system_prompt=cfg.custom_system_prompt,
                     prompt_guidance=combined_guidance,
                     slug_guidance=combined_slug_guidance,
