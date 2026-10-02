@@ -175,3 +175,125 @@ def test_single_rename_title_mode_with_template(tmp_path):
     data = json.loads(renamed_json.read_text())
     assert data["analysis"]["title"] == "Thanksgiving Dinner"
 
+def test_rename_collision_enumerates_when_video_exists(tmp_path):
+    # Existing file and sidecar
+    existing_video = tmp_path / "Trip.mp4"
+    existing_video.write_text("existing trip video")
+    existing_srt = tmp_path / "Trip.srt"
+    existing_srt.write_text("existing srt")
+
+    # New file to rename
+    video2 = tmp_path / "incoming.mp4"
+    video2.write_text("incoming video")
+    srt2 = tmp_path / "incoming.srt"
+    srt2.write_text("incoming srt")
+
+    res = execute_rename(video2, "Trip.mp4", rename_sidecars=True)
+    assert res["status"] == "success"
+    assert res["renamed_to"] == str(tmp_path / "Trip_01.mp4")
+
+    # Original files MUST be preserved and untouched
+    assert existing_video.read_text() == "existing trip video"
+    assert existing_srt.read_text() == "existing srt"
+
+    # New files were enumerated
+    assert (tmp_path / "Trip_01.mp4").read_text() == "incoming video"
+    assert (tmp_path / "Trip_01.srt").read_text() == "incoming srt"
+    assert not video2.exists()
+    assert not srt2.exists()
+
+    # Second collision: rename a 3rd video to Trip.mp4
+    video3 = tmp_path / "third.mp4"
+    video3.write_text("third video")
+    res2 = execute_rename(video3, "Trip.mp4", rename_sidecars=True)
+    assert res2["renamed_to"] == str(tmp_path / "Trip_02.mp4")
+    assert (tmp_path / "Trip_02.mp4").read_text() == "third video"
+
+def test_rename_collision_enumerates_when_sidecar_exists(tmp_path):
+    # Target video does NOT exist, but orphan sidecars exist
+    orphan_srt = tmp_path / "Family.srt"
+    orphan_srt.write_text("orphan subtitle")
+
+    video = tmp_path / "clip.mp4"
+    video.write_text("clip content")
+    clip_srt = tmp_path / "clip.srt"
+    clip_srt.write_text("clip subtitle")
+
+    res = execute_rename(video, "Family.mp4", rename_sidecars=True)
+    assert res["status"] == "success"
+    assert res["renamed_to"] == str(tmp_path / "Family_01.mp4")
+
+    # Orphan subtitle MUST be completely untouched
+    assert orphan_srt.read_text() == "orphan subtitle"
+    # Clip subtitle renamed safely without overwriting
+    assert (tmp_path / "Family_01.srt").read_text() == "clip subtitle"
+
+def test_rename_collision_handles_existing_numbers(tmp_path):
+    existing = tmp_path / "Event_01.mp4"
+    existing.write_text("first event")
+
+    video = tmp_path / "another.mp4"
+    video.write_text("second event")
+
+    res = execute_rename(video, "Event_01.mp4", rename_sidecars=True)
+    # Should become Event_02.mp4, not Event_01_01.mp4
+    assert res["renamed_to"] == str(tmp_path / "Event_02.mp4")
+    assert (tmp_path / "Event_02.mp4").read_text() == "second event"
+    assert existing.read_text() == "first event"
+
+def test_api_single_rename_preview_and_execute_with_collision(tmp_path):
+    existing_video = tmp_path / "Beach_Trip.mp4"
+    existing_video.write_text("beach 1")
+
+    video = tmp_path / "raw_cam.mp4"
+    video.write_text("beach 2")
+    srt = tmp_path / "raw_cam.srt"
+    srt.write_text("sub 2")
+
+    # Preview
+    resp = client.post("/api/rename/single/preview", json={
+        "file_path": str(video),
+        "new_name": "Beach_Trip.mp4",
+        "mode": "filename"
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["target_filename"] == "Beach_Trip_01.mp4"
+
+    # Execute
+    resp2 = client.post("/api/rename/single", json={
+        "file_path": str(video),
+        "new_name": "Beach_Trip.mp4",
+        "mode": "filename",
+        "rename_sidecars": True
+    })
+    assert resp2.status_code == 200
+    res_data = resp2.json()
+    assert res_data["new_filename"] == "Beach_Trip_01.mp4"
+    assert existing_video.read_text() == "beach 1"
+    assert (tmp_path / "Beach_Trip_01.mp4").read_text() == "beach 2"
+    assert (tmp_path / "Beach_Trip_01.srt").read_text() == "sub 2"
+
+def test_api_batch_rename_preview_with_collision(tmp_path):
+    # Two videos that would produce the identical suggested filename
+    v1 = tmp_path / "vid1.mp4"
+    v1.write_text("v1")
+    v1_json = tmp_path / "vid1.info.json"
+    v1_json.write_text(json.dumps({"analysis": {"title": "Sunset View"}}))
+
+    v2 = tmp_path / "vid2.mp4"
+    v2.write_text("v2")
+    v2_json = tmp_path / "vid2.info.json"
+    v2_json.write_text(json.dumps({"analysis": {"title": "Sunset View"}}))
+
+    resp = client.post("/api/rename/preview", json={
+        "file_paths": [str(v1), str(v2)],
+        "template": "{title}"
+    })
+    assert resp.status_code == 200
+    previews = resp.json()
+    assert len(previews) == 2
+    assert previews[0]["suggested_name"] == "Sunset_View.mp4"
+    assert previews[1]["suggested_name"] == "Sunset_View_01.mp4"
+
+

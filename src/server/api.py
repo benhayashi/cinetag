@@ -25,7 +25,7 @@ from src.core.privacy import (
     factory_reset
 )
 from src.media.probe import SUPPORTED_EXTENSIONS, is_video_file, probe_video
-from src.media.renamer import generate_suggested_name, execute_rename, undo_last_rename
+from src.media.renamer import generate_suggested_name, execute_rename, undo_last_rename, resolve_unique_rename_target
 from src.media.tagger import apply_metadata_tags, flush_orphaned_backups
 from src.media.ffmpeg_installer import check_ffmpeg_status, install_standalone_ffmpeg, get_binary_info
 from src.media.faces import face_registry
@@ -1161,6 +1161,7 @@ def preview_rename(req: Union[RenamePreviewRequest, List[str]]):
         except Exception:
             pass
 
+    reserved_targets = set()
     previews = []
     for fp in file_paths:
         p = Path(fp)
@@ -1243,6 +1244,10 @@ def preview_rename(req: Union[RenamePreviewRequest, List[str]]):
             date_source=date_source,
             original_filename=original_name
         )
+
+        unique_target, _ = resolve_unique_rename_target(p, suggested, reserved_paths=reserved_targets)
+        suggested = unique_target.name
+
         previews.append({
             "original_path": str(p),
             "current_name": p.name,
@@ -1312,11 +1317,14 @@ def preview_single_rename(req: SingleRenamePreviewRequest):
             sidecars_found.append(cand_name)
             seen.add(candidate)
 
+    unique_target, _ = resolve_unique_rename_target(orig, target_filename)
+    final_filename = unique_target.name
+
     return {
         "original_filename": orig.name,
-        "target_filename": target_filename,
+        "target_filename": final_filename,
         "sidecars_found": sorted(sidecars_found),
-        "target_path": str(orig.parent / target_filename)
+        "target_path": str(unique_target)
     }
 
 @router.post("/rename/single")

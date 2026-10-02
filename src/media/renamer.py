@@ -358,6 +358,127 @@ def generate_suggested_name(
     new_stem = sanitize_filename(new_stem)
     return f"{new_stem}{original_path.suffix.lower()}"
 
+def resolve_unique_rename_target(
+    original_path: Path,
+    desired_filename: str,
+    reserved_paths: Optional[Set[Path]] = None
+) -> Tuple[Path, List[Tuple[Path, Path]]]:
+    """
+    Safely resolves a unique target path and corresponding sidecar rename mapping.
+    Ensures that neither the video file nor any accompanying sidecar files will ever
+    overwrite an existing file on disk. If conflicts exist with another video or sidecar,
+    it automatically enumerates with serialized zero-padded numerators (_01, _02, etc.).
+    Returns: (target_path, sidecar_renames) where sidecar_renames is [(existing_sidecar, new_sidecar), ...].
+    """
+    parent = original_path.parent
+    desired_path = parent / desired_filename
+    ext = desired_path.suffix
+    base_stem = desired_path.stem
+    orig_resolved = original_path.resolve() if original_path.exists() else original_path
+    VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".flv"}
+
+    # 1. Discover existing sidecars belonging to original_path
+    existing_sidecars: List[Tuple[Path, str, str]] = []
+    if parent.exists() and original_path.exists():
+        old_stem = original_path.stem
+        old_name = original_path.name
+        seen = set()
+        for candidate in parent.iterdir():
+            if not candidate.is_file() or candidate.resolve() == orig_resolved or candidate in seen:
+                continue
+            if candidate.suffix.lower() in VIDEO_EXTENSIONS:
+                continue
+            cand_name = candidate.name
+            if cand_name.startswith(old_name):
+                suffix_part = cand_name[len(old_name):]
+                existing_sidecars.append((candidate, "name", suffix_part))
+                seen.add(candidate)
+            elif cand_name.startswith(f"{old_stem}."):
+                suffix_part = cand_name[len(old_stem):]
+                existing_sidecars.append((candidate, "stem", suffix_part))
+                seen.add(candidate)
+
+    # 2. Check if desired_path is already original_path
+    if desired_path.exists() and desired_path.resolve() == orig_resolved:
+        return desired_path, [(cand, cand) for cand, _, _ in existing_sidecars]
+
+    orig_sidecar_resolved = {c[0].resolve() for c in existing_sidecars}
+    standard_suffixes = [".info.json", ".srt", ".txt", f"{ext}.txt", ".nfo", ".xmp", ".edl", ".fcpxml"]
+
+    def has_conflict(test_stem: str) -> bool:
+        test_video = parent / f"{test_stem}{ext}"
+        # Direct video conflict
+        if test_video.exists() and test_video.resolve() != orig_resolved:
+            return True
+        if reserved_paths and test_video in reserved_paths:
+            return True
+
+        # Video stem conflict with other video formats in same folder
+        if parent.exists():
+            for f in parent.iterdir():
+                if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS and f.resolve() != orig_resolved:
+                    if f.stem == test_stem:
+                        return True
+
+        # Conflict with projected sidecars of original_path
+        for cand_file, mode, suffix_part in existing_sidecars:
+            if mode == "name":
+                proj_s = parent / f"{test_stem}{ext}{suffix_part}"
+            else:
+                proj_s = parent / f"{test_stem}{suffix_part}"
+            if proj_s.exists() and proj_s.resolve() != cand_file.resolve():
+                return True
+            if reserved_paths and proj_s in reserved_paths:
+                return True
+
+        # Conflict with standard sidecars that already exist on disk
+        for s_suf in standard_suffixes:
+            proj_check = parent / f"{test_stem}{s_suf}"
+            if proj_check.exists() and proj_check.resolve() not in orig_sidecar_resolved:
+                return True
+            if reserved_paths and proj_check in reserved_paths:
+                return True
+
+        return False
+
+    if not has_conflict(base_stem):
+        final_stem = base_stem
+    else:
+        # Enumerate with _01, _02, etc.
+        match = re.search(r'^(.*)_(\d+)$', base_stem)
+        if match:
+            prefix = match.group(1)
+            counter = int(match.group(2)) + 1
+            width = max(2, len(match.group(2)))
+        else:
+            prefix = base_stem
+            counter = 1
+            width = 2
+
+        while True:
+            cand_stem = f"{prefix}_{counter:0{width}d}"
+            if not has_conflict(cand_stem):
+                final_stem = cand_stem
+                break
+            counter += 1
+
+    target_path = parent / f"{final_stem}{ext}"
+    sidecar_renames = []
+    for cand_file, mode, suffix_part in existing_sidecars:
+        if mode == "name":
+            new_s = parent / f"{target_path.name}{suffix_part}"
+        else:
+            new_s = parent / f"{final_stem}{suffix_part}"
+        sidecar_renames.append((cand_file, new_s))
+
+    if reserved_paths is not None:
+        reserved_paths.add(target_path)
+        for _, new_s in sidecar_renames:
+            reserved_paths.add(new_s)
+
+    return target_path, sidecar_renames
+
+
 def execute_rename(
     original_path: Path,
     new_filename: str,
@@ -373,99 +494,50 @@ def execute_rename(
     if not original_path.exists():
         raise FileNotFoundError(f"Source file does not exist: {original_path}")
 
-    parent = original_path.parent
-    target_path = parent / new_filename
-
-    # Collision avoidance with serialized numerator (_01, _02, etc.)
-    if target_path.exists() and target_path.resolve() != original_path.resolve():
-        base_stem = target_path.stem
-        ext = target_path.suffix
-        counter = 1
-        while (parent / f"{base_stem}_{counter:02d}{ext}").exists():
-            counter += 1
-        target_path = parent / f"{base_stem}_{counter:02d}{ext}"
-
-    VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".flv"}
+    target_path, candidate_sidecars = resolve_unique_rename_target(original_path, new_filename)
 
     if target_path == original_path:
         # If target filename is identical but new_title is provided, update sidecar metadata
         if new_title:
-            old_stem = original_path.stem
-            old_name = original_path.name
-            for candidate in parent.iterdir():
-                if candidate == original_path or not candidate.is_file() or candidate.suffix.lower() in VIDEO_EXTENSIONS:
-                    continue
+            for candidate, _ in candidate_sidecars:
                 cand_name = candidate.name
-                if cand_name.startswith(old_name) or cand_name.startswith(f"{old_stem}."):
-                    if cand_name.endswith(".info.json"):
-                        try:
-                            with open(candidate, "r", encoding="utf-8") as jf:
-                                jdata = json.load(jf)
-                            if "analysis" in jdata and isinstance(jdata["analysis"], dict):
-                                jdata["analysis"]["title"] = new_title
-                            with open(candidate, "w", encoding="utf-8") as jf:
-                                json.dump(jdata, jf, indent=2, ensure_ascii=False)
-                        except Exception:
-                            pass
-                    elif cand_name.endswith(".txt"):
-                        try:
-                            content = candidate.read_text(encoding="utf-8")
-                            lines = content.splitlines()
-                            if lines and ("—" in lines[0] or " - " in lines[0]):
-                                lines[0] = f"{target_path.name} — {new_title}"
-                                candidate.write_text("\n".join(lines), encoding="utf-8")
-                        except Exception:
-                            pass
-                    elif cand_name.endswith(".nfo"):
-                        try:
-                            content = candidate.read_text(encoding="utf-8")
-                            if "<title>" in content:
-                                import re
-                                content = re.sub(r"<title>.*?</title>", f"<title>{new_title}</title>", content, count=1)
-                                candidate.write_text(content, encoding="utf-8")
-                        except Exception:
-                            pass
+                if cand_name.endswith(".info.json"):
+                    try:
+                        with open(candidate, "r", encoding="utf-8") as jf:
+                            jdata = json.load(jf)
+                        if "analysis" in jdata and isinstance(jdata["analysis"], dict):
+                            jdata["analysis"]["title"] = new_title
+                        with open(candidate, "w", encoding="utf-8") as jf:
+                            json.dump(jdata, jf, indent=2, ensure_ascii=False)
+                    except Exception:
+                        pass
+                elif cand_name.endswith(".txt"):
+                    try:
+                        content = candidate.read_text(encoding="utf-8")
+                        lines = content.splitlines()
+                        if lines and ("—" in lines[0] or " - " in lines[0]):
+                            lines[0] = f"{target_path.name} — {new_title}"
+                            candidate.write_text("\n".join(lines), encoding="utf-8")
+                    except Exception:
+                        pass
+                elif cand_name.endswith(".nfo"):
+                    try:
+                        content = candidate.read_text(encoding="utf-8")
+                        if "<title>" in content:
+                            content = re.sub(r"<title>.*?</title>", f"<title>{new_title}</title>", content, count=1)
+                            candidate.write_text(content, encoding="utf-8")
+                    except Exception:
+                        pass
             return {"status": "success", "original": str(original_path), "renamed_to": str(target_path), "sidecars_renamed": [], "message": "Metadata updated"}
         return {"status": "skipped", "message": "Filename is identical"}
 
-    # Find associated sidecar files (e.g. filename.ext.txt, filename.info.json, filename.srt, etc.)
-    sidecar_renames = []
-    if rename_sidecars:
-        old_stem = original_path.stem
-        old_name = original_path.name
-        new_stem = target_path.stem
-        new_name = target_path.name
-        seen_candidates = set()
-
-        for candidate in parent.iterdir():
-            if candidate == original_path or not candidate.is_file() or candidate in seen_candidates:
-                continue
-            if candidate.suffix.lower() in VIDEO_EXTENSIONS:
-                continue
-            cand_name = candidate.name
-            if cand_name.startswith(old_name):
-                # E.g. video.mp4.txt -> new_name.mp4.txt
-                suffix_part = cand_name[len(old_name):]
-                new_sidecar = parent / f"{new_name}{suffix_part}"
-                sidecar_renames.append((candidate, new_sidecar))
-                seen_candidates.add(candidate)
-            elif cand_name.startswith(f"{old_stem}."):
-                # E.g. video.info.json -> new_stem.info.json, video.srt -> new_stem.srt
-                suffix_part = cand_name[len(old_stem):]
-                new_sidecar = parent / f"{new_stem}{suffix_part}"
-                sidecar_renames.append((candidate, new_sidecar))
-                seen_candidates.add(candidate)
+    sidecar_renames = candidate_sidecars if rename_sidecars else []
 
     # Perform rename
     original_path.rename(target_path)
     sidecars_moved = []
     for old_s, new_s in sidecar_renames:
-        if old_s.exists():
-            if new_s.exists() and new_s.resolve() != old_s.resolve():
-                try:
-                    new_s.unlink()
-                except Exception:
-                    pass
+        if old_s.exists() and old_s.resolve() != new_s.resolve():
             old_s.rename(new_s)
             sidecars_moved.append({"from": str(old_s), "to": str(new_s)})
 

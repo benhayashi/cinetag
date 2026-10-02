@@ -13,7 +13,7 @@ from src.core.privacy import cleanup_video_cache, purge_expired_cache
 from src.media.probe import probe_video
 from src.media.sampler import extract_frames, extract_audio
 from src.media.tagger import apply_metadata_tags, flush_orphaned_backups
-from src.media.renamer import generate_suggested_name, execute_rename
+from src.media.renamer import generate_suggested_name, execute_rename, resolve_unique_rename_target
 from src.ai.base import VideoAnalysisResult
 from src.ai.ollama_provider import OllamaVisionProvider
 from src.ai.openai_provider import OpenAICompatibleVisionProvider
@@ -628,6 +628,10 @@ class QueueManager:
                 include_names_in_title=getattr(cfg, "include_names_in_title", False)
             )
 
+            # Ensure suggested_name is conflict-free and enumerated if needed
+            unique_target, _ = resolve_unique_rename_target(video_path, suggested_name)
+            suggested_name = unique_target.name
+
             # Auto-rename if configured
             final_path = str(video_path)
             if cfg.auto_rename and suggested_name != video_path.name:
@@ -641,7 +645,8 @@ class QueueManager:
                     video_path = Path(final_path)
                     self.log(f"Auto-renamed {old_name} -> {task.filename}", task_id=task.id)
                     # Update written_sidecars paths to match renamed sidecar locations
-                    moved_map = {m["from"]: m["to"] for m in ren_res.get("sidecars_moved", [])}
+                    sc_moved = ren_res.get("sidecars_renamed") or ren_res.get("sidecars_moved") or []
+                    moved_map = {m["from"]: m["to"] for m in sc_moved}
                     written_sidecars = [moved_map.get(s, s) for s in written_sidecars]
                 elif ren_res.get("status") == "skipped":
                     self.log(f"Auto-rename skipped for {video_path.name}: {ren_res.get('message', '')}", task_id=task.id)
