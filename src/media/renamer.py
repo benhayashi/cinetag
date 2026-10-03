@@ -98,13 +98,42 @@ def sanitize_filename(name: str) -> str:
         cleaned = truncate_at_word_boundary(cleaned, 100)
     return cleaned or "unnamed_video"
 
-def extract_datetime_from_filename(name: str) -> Optional[datetime]:
+MONTH_MAP = {
+    "jan": 1, "january": 1,
+    "feb": 2, "february": 2,
+    "mar": 3, "march": 3,
+    "apr": 4, "april": 4,
+    "may": 5,
+    "jun": 6, "june": 6,
+    "jul": 7, "july": 7,
+    "aug": 8, "august": 8,
+    "sep": 9, "september": 9,
+    "oct": 10, "october": 10,
+    "nov": 11, "november": 11,
+    "dec": 12, "december": 12,
+}
+MONTH_REGEX = r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember))"
+
+CAMERA_PREFIX_RE = re.compile(
+    r"^(?:VID|VIDEO|IMG|PICT|DSC|DSCF|DSCN|MOV|GOPR|GP|DJI|PXL|REC|CLIP|MVI|SAM|MAH|C\d{4})[_-]?",
+    re.IGNORECASE
+)
+SEQUENCE_SUFFIX_RE = re.compile(
+    r"[_-]?(?:\d{3,4}|\(\d+\)|\[\d+\])$"
+)
+GENERIC_FILENAME_WORDS = {
+    "vid", "video", "mov", "movie", "clip", "dsc", "img", "pxl", "rec", "recording",
+    "shot", "cut", "edit", "unnamed", "file", "media", "camera"
+}
+
+def extract_datetime_from_filename(name: str, order_preference: str = "auto") -> Optional[datetime]:
     """
-    Extract date and optional time from common camera/phone/recorder filename conventions:
-    - YYYYMMDD_HHMMSS (e.g. 20150522_230949_001.mp4, VID_20150522_230949.mp4)
-    - YYYY-MM-DD_HH-MM-SS or YYYY-MM-DD HH.MM.SS
-    - YYYYMMDD-HHMMSS
-    - YYYYMMDD or YYYY-MM-DD
+    Extract date and optional time from common filename conventions:
+    - YYYYMMDD_HHMMSS, YYYYMMDD-HHMMSS, or YYYYMMDDHHMMSS
+    - YYYY-MM-DD or YYYY_MM_DD or YYYY.MM.DD with optional HH:MM:SS
+    - Named months: July_2019, 15_Aug_2021, Oct-10-2022
+    - MM-DD-YYYY or DD-MM-YYYY with optional time, resolved by order_preference ('auto' | 'mdy' | 'dmy' | 'ymd')
+    - YYYYMMDD without time
     """
     if not name:
         return None
@@ -113,41 +142,216 @@ def extract_datetime_from_filename(name: str) -> Optional[datetime]:
     # 1. YYYYMMDD_HHMMSS or YYYYMMDD-HHMMSS or YYYYMMDDHHMMSS
     m = re.search(r"(?:^|[^\d])(19\d\d|20\d\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[_-]?([01]\d|2[0-3])([0-5]\d)([0-5]\d)(?:[^\d]|$)", stem)
     if m:
-        y, mo, d, h, mi, s = map(int, m.groups())
         try:
+            return datetime(*map(int, m.groups()))
+        except ValueError:
+            pass
+
+    # 2. YYYY-MM-DD or YYYY_MM_DD or YYYY.MM.DD with optional HH:MM:SS / HH-MM-SS / HH.MM.SS
+    m = re.search(r"(?:^|[^\d])(19\d\d|20\d\d)[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12]\d|3[01])(?:[ _-]?([01]\d|2[0-3])[:.-]?([0-5]\d)[:.-]?([0-5]\d))?(?:[^\d]|$)", stem)
+    if m:
+        try:
+            y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            h = int(m.group(4)) if m.group(4) else 0
+            mi = int(m.group(5)) if m.group(5) else 0
+            s = int(m.group(6)) if m.group(6) else 0
             return datetime(y, mo, d, h, mi, s)
         except ValueError:
             pass
 
-    # 2. YYYY-MM-DD with optional HH:MM:SS / HH-MM-SS / HH.MM.SS
-    m = re.search(r"(?:^|[^\d])(19\d\d|20\d\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(?:[ _-]?([01]\d|2[0-3])[:.-]?([0-5]\d)[:.-]?([0-5]\d))?(?:[^\d]|$)", stem)
+    # 3. Named month patterns
+    # 3a. Month_DD_YYYY
+    m = re.search(rf"(?:^|[^\w]){MONTH_REGEX}[-_\s]+(0?[1-9]|[12]\d|3[01])[-_,\s]+(19\d\d|20\d\d)(?:[^\d]|$)", stem, re.IGNORECASE)
     if m:
-        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            mo = MONTH_MAP[m.group(1).lower()]
+            d = int(m.group(2))
+            y = int(m.group(3))
+            return datetime(y, mo, d, 0, 0, 0)
+        except (ValueError, KeyError):
+            pass
+
+    # 3b. DD_Month_YYYY
+    m = re.search(rf"(?:^|[^\d])(0?[1-9]|[12]\d|3[01])[-_\s]+{MONTH_REGEX}[-_,\s]+(19\d\d|20\d\d)(?:[^\d]|$)", stem, re.IGNORECASE)
+    if m:
+        try:
+            d = int(m.group(1))
+            mo = MONTH_MAP[m.group(2).lower()]
+            y = int(m.group(3))
+            return datetime(y, mo, d, 0, 0, 0)
+        except (ValueError, KeyError):
+            pass
+
+    # 3c. Month_YYYY (no day)
+    m = re.search(rf"(?:^|[^\w]){MONTH_REGEX}[-_\s]+(19\d\d|20\d\d)(?:[^\d]|$)", stem, re.IGNORECASE)
+    if m:
+        try:
+            mo = MONTH_MAP[m.group(1).lower()]
+            y = int(m.group(2))
+            return datetime(y, mo, 1, 0, 0, 0)
+        except (ValueError, KeyError):
+            pass
+
+    # 4. Number-Number-Year (MM-DD-YYYY or DD-MM-YYYY)
+    m = re.search(r"(?:^|[^\d])(0?[1-9]|[12]\d|3[01])[-_.](0?[1-9]|[12]\d|3[01])[-_.](19\d\d|20\d\d)(?:[ _-]?([01]\d|2[0-3])[:.-]?([0-5]\d)[:.-]?([0-5]\d))?(?:[^\d]|$)", stem)
+    if m:
+        a = int(m.group(1))
+        b = int(m.group(2))
+        y = int(m.group(3))
         h = int(m.group(4)) if m.group(4) else 0
         mi = int(m.group(5)) if m.group(5) else 0
         s = int(m.group(6)) if m.group(6) else 0
+
+        pref = (order_preference or "auto").lower()
+        if pref == "dmy":
+            day, month = a, b
+        elif pref == "mdy":
+            month, day = a, b
+        else:  # auto
+            if a > 12 and b <= 12:
+                day, month = a, b
+            elif b > 12 and a <= 12:
+                month, day = a, b
+            else:
+                # Default to US MM-DD-YYYY
+                month, day = a, b
         try:
-            return datetime(y, mo, d, h, mi, s)
+            return datetime(y, month, day, h, mi, s)
         except ValueError:
             pass
 
-    # 3. YYYYMMDD without time
+    # 5. YYYYMMDD without time
     m = re.search(r"(?:^|[^\d])(19[7-9]\d|20\d\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:[^\d]|$)", stem)
     if m:
-        y, mo, d = map(int, m.groups())
         try:
-            return datetime(y, mo, d, 0, 0, 0)
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         except ValueError:
             pass
 
     return None
+
+def extract_filename_context(name: str, date_order: str = "auto") -> Dict[str, Any]:
+    """
+    Extract meaningful metadata and context clues from a video filename:
+    - Detected date/time (with multi-format support: YMD, MDY, DMY, month names)
+    - Cleaned title/context keywords (stripping camera prefixes like VID_, IMG_, DSC_, sequence numbers, and dates)
+    - Extracted potential subject/people names or location hints
+    - Indicator if meaningful textual clues exist beyond generic camera labels
+    """
+    if not name:
+        return {
+            "original_filename": "",
+            "detected_date": None,
+            "detected_date_str": None,
+            "detected_date_formatted": None,
+            "cleaned_text": "",
+            "potential_names": [],
+            "has_meaningful_clues": False
+        }
+
+    original_filename = Path(name).name
+    stem = Path(name).stem
+
+    # Detect date
+    dt = extract_datetime_from_filename(original_filename, order_preference=date_order)
+    dt_str = dt.strftime("%Y-%m-%d") if dt else None
+    dt_formatted = None
+    if dt:
+        if dt.day != 1 or dt.hour > 0:
+            dt_formatted = dt.strftime("%B %d, %Y")
+        else:
+            dt_formatted = dt.strftime("%B %Y")
+
+    # Clean stem of camera prefixes and sequence suffixes
+    stem_no_cam = CAMERA_PREFIX_RE.sub("", stem)
+    stem_no_seq = SEQUENCE_SUFFIX_RE.sub("", stem_no_cam)
+
+    # Strip out detected date/time patterns from text
+    d_clean = re.sub(r"(?:19\d\d|20\d\d)[-_.]?(?:0[1-9]|1[0-2])[-_.]?(?:0[1-9]|[12]\d|3[01])(?:[ _-]?[012]\d[:.-]?[0-5]\d[:.-]?[0-5]\d)?", "", stem_no_seq)
+    d_clean = re.sub(r"(?:0?[1-9]|[12]\d|3[01])[-_.](?:0?[1-9]|[12]\d|3[01])[-_.](?:19\d\d|20\d\d)(?:[ _-]?[012]\d[:.-]?[0-5]\d[:.-]?[0-5]\d)?", "", d_clean)
+    d_clean = re.sub(rf"{MONTH_REGEX}[-_\s]+(?:0?[1-9]|[12]\d|3[01])?[-_,\s]*(?:19\d\d|20\d\d)?", "", d_clean, flags=re.IGNORECASE)
+    d_clean = re.sub(rf"(?:0?[1-9]|[12]\d|3[01])[-_\s]+{MONTH_REGEX}[-_,\s]*(?:19\d\d|20\d\d)?", "", d_clean, flags=re.IGNORECASE)
+    d_clean = re.sub(r"(?:19\d\d|20\d\d)", "", d_clean)
+
+    # Clean words
+    raw_tokens = re.split(r"[\s_.\-+]+", d_clean)
+    cleaned_tokens = [w for w in raw_tokens if w and not w.isdigit()]
+    
+    # Filter out generic words when checking for meaningfulness
+    substantive_tokens = [w for w in cleaned_tokens if w.lower() not in GENERIC_FILENAME_WORDS and len(w) > 1]
+    
+    cleaned_text = " ".join(cleaned_tokens).strip()
+
+    # Identify potential names / proper nouns / places
+    stopwords = {"and", "the", "with", "at", "for", "in", "on", "of", "to", "by", "from", "a", "an", "is", "my", "our"}
+    potential_names = []
+    for token in substantive_tokens:
+        if token[0].isupper() and token.lower() not in stopwords:
+            if token not in potential_names:
+                potential_names.append(token)
+
+    has_meaningful_clues = bool(substantive_tokens and len(" ".join(substantive_tokens)) >= 3)
+
+    return {
+        "original_filename": original_filename,
+        "detected_date": dt,
+        "detected_date_str": dt_str,
+        "detected_date_formatted": dt_formatted,
+        "cleaned_text": cleaned_text,
+        "potential_names": potential_names,
+        "has_meaningful_clues": has_meaningful_clues
+    }
+
+def format_filename_context_prompt(info: Dict[str, Any]) -> Optional[str]:
+    """
+    Format extracted filename metadata into structured AI prompt guidance.
+    """
+    if not info:
+        return None
+    orig_name = info.get("original_filename", "")
+    date_str = info.get("detected_date_formatted") or info.get("detected_date_str")
+    cleaned_text = info.get("cleaned_text")
+    potential_names = info.get("potential_names", [])
+    has_meaningful_clues = info.get("has_meaningful_clues", False)
+
+    if not has_meaningful_clues and not date_str:
+        return None
+
+    lines = [
+        "=== Original Filename Context & Clues ===",
+        f"Original filename: \"{orig_name}\""
+    ]
+    if date_str:
+        lines.append(f"- Date clue from filename: {date_str}")
+    if cleaned_text:
+        lines.append(f"- Context/topic clues from filename: \"{cleaned_text}\"")
+    if potential_names:
+        lines.append(f"- Keywords/potential subjects: {', '.join(potential_names)}")
+
+    if has_meaningful_clues:
+        lines.extend([
+            "",
+            "Instructions for incorporating filename clues:",
+            "1. Grounding & Verification: If people, activities, or locations mentioned in the filename are visible or audible in the video, prioritize including them in the title, summary, people_or_subjects, and tags.",
+            "2. Direct AI Slug: Reflect key subjects and actions from both the video and filename hints in 'suggested_filename' (lowercase with underscores, e.g. \"sarah_birthday_cake\")."
+        ])
+    elif date_str:
+        lines.extend([
+            "",
+            "Note: The filename contains a date clue. You may use this date context to orient the timeframe if relevant."
+        ])
+
+    lines.append("==========================================")
+    return "\n".join(lines)
+
 
 def resolve_datetime(
     original_path: Optional[Path] = None,
     creation_date: Optional[str] = None,
     date_override: Optional[str] = None,
     date_source: str = "smart",
-    original_filename: Optional[str] = None
+    original_filename: Optional[str] = None,
+    date_order: str = "auto"
 ) -> Tuple[datetime, datetime, str]:
     """
     Resolves local and UTC datetime for filename and tag generation.
@@ -189,7 +393,7 @@ def resolve_datetime(
 
     dt_from_file: Optional[datetime] = None
     for name_candidate in names_to_test:
-        dt_from_file = extract_datetime_from_filename(name_candidate)
+        dt_from_file = extract_datetime_from_filename(name_candidate, order_preference=date_order)
         if dt_from_file:
             break
 
@@ -264,7 +468,8 @@ def generate_suggested_name(
     include_names_in_title: bool = False,
     date_override: Optional[str] = None,
     date_source: str = "smart",
-    original_filename: Optional[str] = None
+    original_filename: Optional[str] = None,
+    date_order: str = "auto"
 ) -> str:
     """
     Generate a suggested filename based on metadata and a template.
@@ -310,7 +515,8 @@ def generate_suggested_name(
         creation_date=creation_date,
         date_override=date_override,
         date_source=date_source,
-        original_filename=original_filename
+        original_filename=original_filename,
+        date_order=date_order
     )
 
     date_str = dt_local.strftime("%Y-%m-%d")

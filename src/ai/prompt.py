@@ -34,6 +34,7 @@ Important Rules:
 7. Concise Acronyms & Abbreviations: Use common acronyms and abbreviations in titles and descriptions where applicable to save characters (e.g. "yo" for "year old" like "3yo boy", "USA" for "United States of America", "NYC" for "New York City", "UK", "bday" for "birthday", "Xmas" for "Christmas").
 8. Title Quality: Keep titles complete, descriptive, and concise (3-6 words). Ensure the title is a finished thought and NEVER ends abruptly or in the middle of a word.
 9. Output ONLY the raw JSON object, without introductory text or markdown formatting if possible.
+10. Filename Clues & Historical Metadata: When original filename context clues (such as people's names, event titles, locations, or dates) are provided, verify them against visual and audible cues. If consistent with the footage, incorporate them into "people_or_subjects", the "title", the "summary", "tags", and "suggested_filename".
 """
 DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
 
@@ -49,7 +50,8 @@ def build_user_prompt(
     context: Optional[str] = None,
     subtitle_dialogue: Optional[str] = None,
     prompt_guidance: Optional[str] = None,
-    slug_guidance: Optional[str] = None
+    slug_guidance: Optional[str] = None,
+    filename_context: Optional[str] = None
 ) -> str:
     parts = ["Here are the sampled video frames taken at timestamps: " + ", ".join(timestamps) + "."]
     
@@ -63,6 +65,9 @@ def build_user_prompt(
 
     if context and context.strip():
         parts.append(f"\nAdditional context about the video/people:\n{context.strip()}")
+
+    if filename_context and filename_context.strip():
+        parts.append(f"\n{filename_context.strip()}")
 
     if prompt_guidance and prompt_guidance.strip():
         parts.append(

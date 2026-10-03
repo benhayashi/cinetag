@@ -42,6 +42,8 @@ class TaskItem(BaseModel):
     date_source: Optional[str] = None
     prompt_guidance: Optional[str] = None
     slug_guidance: Optional[str] = None
+    use_filename_context: Optional[bool] = None
+    filename_date_order: Optional[str] = None
 
 class QueueManager:
     """Manages background batch processing queue and worker thread."""
@@ -79,7 +81,9 @@ class QueueManager:
         date_override: Optional[str] = None,
         date_source: Optional[str] = None,
         prompt_guidance: Optional[str] = None,
-        slug_guidance: Optional[str] = None
+        slug_guidance: Optional[str] = None,
+        use_filename_context: Optional[bool] = None,
+        filename_date_order: Optional[str] = None
     ) -> List[TaskItem]:
         with self._lock:
             added = []
@@ -97,7 +101,9 @@ class QueueManager:
                         date_override=date_override,
                         date_source=date_source,
                         prompt_guidance=prompt_guidance,
-                        slug_guidance=slug_guidance
+                        slug_guidance=slug_guidance,
+                        use_filename_context=use_filename_context,
+                        filename_date_order=filename_date_order
                     )
                     self.queue.append(task)
                     added.append(task)
@@ -262,12 +268,14 @@ class QueueManager:
             from src.media.renamer import resolve_datetime
             date_override_val = task.date_override or getattr(cfg, "default_date_override", None)
             date_source_val = task.date_source or getattr(cfg, "date_source", "smart")
+            date_order_pref = task.filename_date_order or getattr(cfg, "filename_date_order", "auto")
             dt_local, dt_utc, date_source_used = resolve_datetime(
                 original_path=video_path,
                 creation_date=meta.get("creation_time"),
                 date_override=date_override_val,
                 date_source=date_source_val,
-                original_filename=task.filename
+                original_filename=task.filename,
+                date_order=date_order_pref
             )
             resolved_iso = dt_local.isoformat()
             if date_source_used in ("override", "filename") or not meta.get("creation_time"):
@@ -435,6 +443,22 @@ class QueueManager:
                     short_slug = short_slug[:57] + "..."
                 self.log(f"Applying AI slug naming convention: \"{short_slug}\"", task_id=task.id)
 
+            # Filename context extraction & clues injection
+            use_filename_ctx = getattr(task, "use_filename_context", None)
+            if use_filename_ctx is None:
+                use_filename_ctx = getattr(cfg, "use_filename_context", True)
+
+            filename_ctx_prompt = None
+            if use_filename_ctx:
+                from src.media.renamer import extract_filename_context, format_filename_context_prompt
+                fn_date_order = task.filename_date_order or getattr(cfg, "filename_date_order", "auto")
+                fn_info = extract_filename_context(video_path.name, date_order=fn_date_order)
+                if fn_info.get("has_meaningful_clues") or fn_info.get("detected_date_str"):
+                    filename_ctx_prompt = format_filename_context_prompt(fn_info)
+                    clue_preview = fn_info.get("cleaned_text") or fn_info.get("detected_date_str") or ""
+                    if clue_preview:
+                        self.log(f"Applying filename context hints: \"{clue_preview}\"", task_id=task.id)
+
             timeout_sec = getattr(cfg, "ai_timeout_seconds", 600)
             analysis: VideoAnalysisResult
             if cfg.vision_provider == "ollama":
@@ -451,6 +475,7 @@ class QueueManager:
                     system_prompt=cfg.custom_system_prompt,
                     prompt_guidance=combined_guidance,
                     slug_guidance=combined_slug_guidance,
+                    filename_context=filename_ctx_prompt,
                     timeout_seconds=timeout_sec,
                     num_ctx=ollama_ctx
                 )
@@ -467,6 +492,7 @@ class QueueManager:
                     system_prompt=cfg.custom_system_prompt,
                     prompt_guidance=combined_guidance,
                     slug_guidance=combined_slug_guidance,
+                    filename_context=filename_ctx_prompt,
                     timeout_seconds=timeout_sec
                 )
             elif cfg.vision_provider == "cloud":
@@ -484,6 +510,7 @@ class QueueManager:
                     system_prompt=cfg.custom_system_prompt,
                     prompt_guidance=combined_guidance,
                     slug_guidance=combined_slug_guidance,
+                    filename_context=filename_ctx_prompt,
                     timeout_seconds=timeout_sec
                 )
             else:
@@ -628,7 +655,8 @@ class QueueManager:
                 collection_name=video_path.parent.name if video_path.parent else "",
                 people_names=analysis.people_or_subjects,
                 max_title_length=getattr(cfg, "max_title_length", 50),
-                include_names_in_title=getattr(cfg, "include_names_in_title", False)
+                include_names_in_title=getattr(cfg, "include_names_in_title", False),
+                date_order=task.filename_date_order or getattr(cfg, "filename_date_order", "auto")
             )
 
             # Ensure suggested_name is conflict-free and enumerated if needed

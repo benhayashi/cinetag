@@ -1081,6 +1081,10 @@ async function executeQueueAdd(filePaths, conflictMode, autoStart) {
 
     let promptGuidance = document.getElementById("queue-prompt-guidance")?.value.trim() || undefined;
     let slugGuidance = document.getElementById("queue-slug-guidance")?.value.trim() || undefined;
+    const batchUseFnCtxEl = document.getElementById("batch-use-filename-context");
+    const useFilenameCtx = batchUseFnCtxEl ? batchUseFnCtxEl.checked : undefined;
+    const batchFnDateOrderEl = document.getElementById("batch-filename-date-order");
+    const fnDateOrder = batchFnDateOrderEl ? batchFnDateOrderEl.value : undefined;
 
     const res = await fetch("/api/queue/add", {
       method: "POST",
@@ -1091,7 +1095,9 @@ async function executeQueueAdd(filePaths, conflictMode, autoStart) {
         date_override: dateOverride,
         date_source: dateSource,
         prompt_guidance: promptGuidance,
-        slug_guidance: slugGuidance
+        slug_guidance: slugGuidance,
+        use_filename_context: useFilenameCtx,
+        filename_date_order: fnDateOrder
       })
     });
     if (!res.ok) {
@@ -1769,6 +1775,18 @@ async function loadConfig() {
     const defaultSlugGuidanceEl = document.getElementById("cfg-default-slug-guidance");
     if (defaultSlugGuidanceEl) defaultSlugGuidanceEl.value = cfg.default_slug_guidance || "";
 
+    const useFilenameCtxEl = document.getElementById("cfg-use-filename-context");
+    if (useFilenameCtxEl) useFilenameCtxEl.checked = cfg.use_filename_context ?? true;
+
+    const fnDateOrderEl = document.getElementById("cfg-filename-date-order");
+    if (fnDateOrderEl) fnDateOrderEl.value = cfg.filename_date_order || "auto";
+
+    const batchUseFnCtxEl = document.getElementById("batch-use-filename-context");
+    if (batchUseFnCtxEl) batchUseFnCtxEl.checked = cfg.use_filename_context ?? true;
+
+    const batchFnDateOrderEl = document.getElementById("batch-filename-date-order");
+    if (batchFnDateOrderEl) batchFnDateOrderEl.value = cfg.filename_date_order || "auto";
+
     const customSystemPromptEl = document.getElementById("cfg-custom-system-prompt");
     if (customSystemPromptEl) customSystemPromptEl.value = cfg.custom_system_prompt || "";
 
@@ -2197,7 +2215,9 @@ function initSettings() {
       custom_system_prompt: document.getElementById("cfg-custom-system-prompt")?.value.trim() || "",
       batch_prompt_guidance: document.getElementById("queue-prompt-guidance")?.value.trim() || "",
       default_slug_guidance: document.getElementById("cfg-default-slug-guidance")?.value.trim() || "",
-      batch_slug_guidance: document.getElementById("queue-slug-guidance")?.value.trim() || ""
+      batch_slug_guidance: document.getElementById("queue-slug-guidance")?.value.trim() || "",
+      use_filename_context: document.getElementById("cfg-use-filename-context")?.checked ?? true,
+      filename_date_order: document.getElementById("cfg-filename-date-order")?.value || "auto"
     };
 
     try {

@@ -66,6 +66,8 @@ class AddQueueRequest(BaseModel):
     date_source: Optional[str] = None
     prompt_guidance: Optional[str] = None
     slug_guidance: Optional[str] = None
+    use_filename_context: Optional[bool] = None
+    filename_date_order: Optional[str] = None
 
 class BatchPromptGuidanceRequest(BaseModel):
     prompt_guidance: str
@@ -209,7 +211,9 @@ def add_to_queue(req: AddQueueRequest):
         date_override=req.date_override,
         date_source=req.date_source,
         prompt_guidance=req.prompt_guidance,
-        slug_guidance=req.slug_guidance
+        slug_guidance=req.slug_guidance,
+        use_filename_context=req.use_filename_context,
+        filename_date_order=req.filename_date_order
     )
     return {"status": "ok", "added_count": len(added)}
 

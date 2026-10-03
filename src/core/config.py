@@ -41,6 +41,8 @@ class AppConfig(BaseModel):
     batch_prompt_guidance: str = Field(default="", description="Active batch guidance prompt for current queue processing")
     default_slug_guidance: str = Field(default="", description="Permanent naming convention guidance for AI suggested slug (e.g. category_action_detail, max 30 chars, lowercase underscores)")
     batch_slug_guidance: str = Field(default="", description="Active batch naming convention guidance for AI suggested slug")
+    use_filename_context: bool = Field(default=True, description="Incorporate clues from original filename (dates, names, event keywords) into AI analysis and suggested slug")
+    filename_date_order: str = Field(default="auto", description="Date order preference in filenames: auto | ymd | mdy | dmy")
 
     # Whisper Audio Transcription & Subtitles
     transcribe_audio: bool = True

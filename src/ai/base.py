@@ -49,6 +49,7 @@ class BaseVisionProvider(ABC):
         system_prompt: Optional[str] = None,
         prompt_guidance: Optional[str] = None,
         slug_guidance: Optional[str] = None,
+        filename_context: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
         num_ctx: Optional[int] = None,
         **kwargs

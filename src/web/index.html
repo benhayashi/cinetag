@@ -268,6 +268,23 @@
             </div>
           </div>
 
+          <!-- Batch Filename Clues & Date Preference Bar -->
+          <div style="margin-top: 0.6rem; padding: 0.6rem 0.85rem; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem;">
+            <label for="batch-use-filename-context" style="margin-bottom: 0; font-size: 0.85rem; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 0.45rem;">
+              <input type="checkbox" id="batch-use-filename-context" style="width: 1.05rem; height: 1.05rem; cursor: pointer;" checked>
+              <span>📁 Incorporate Filename Clues into AI Analysis (Dates, Names, Keywords)</span>
+            </label>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <label for="batch-filename-date-order" style="margin-bottom: 0; font-size: 0.78rem; color: var(--text-muted); font-weight: 500;">Date Order:</label>
+              <select id="batch-filename-date-order" class="form-control" style="font-size: 0.78rem; padding: 0.2rem 0.5rem; width: auto; height: auto;">
+                <option value="auto">Auto-detect</option>
+                <option value="ymd">YYYY-MM-DD (ISO)</option>
+                <option value="mdy">MM-DD-YYYY (US)</option>
+                <option value="dmy">DD-MM-YYYY (Intl)</option>
+              </select>
+            </div>
+          </div>
+
           <div class="progress-box">
             <div class="progress-label">
               <span id="current-task-name">No active file</span>
@@ -829,6 +846,29 @@
             <label for="cfg-default-slug-guidance" style="font-weight: 600; color: #c084fc;">🏷️ Default AI Slug Naming Convention ({ai_slug} Permanent Addendum)</label>
             <textarea id="cfg-default-slug-guidance" class="form-control" rows="2" style="font-size: 0.85rem;" placeholder="e.g. Format as: category_action_detail (e.g. travel_hiking_mountain_trail). Lowercase underscores only. Max 4 words. Keep under 30 characters."></textarea>
             <small class="helper-text">Instructs the AI model how to format, structure, and abbreviate the <code>{ai_slug}</code> for filename generation.</small>
+          </div>
+
+          <div class="form-group mt-3" style="background: rgba(30, 41, 59, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1rem;">
+            <div class="flex-between align-center mb-1">
+              <label for="cfg-use-filename-context" style="font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0;">
+                <input type="checkbox" id="cfg-use-filename-context" style="width: 1.1rem; height: 1.1rem; cursor: pointer;" checked>
+                <span>📁 Incorporate Original Filename Clues into AI Analysis</span>
+              </label>
+              <span class="badge" style="font-size: 0.72rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">Context Clues</span>
+            </div>
+            <p class="text-muted mb-2" style="font-size: 0.8rem;">
+              Extracts people names, locations, event keywords, and dates from the file name (e.g. <code>Dad_and_Sarah_at_Disneyland.mp4</code> or <code>10-25-2018_Birthday.mp4</code>) and feeds them to the AI to enrich titles, summaries, tags, subjects, and suggested slugs.
+            </p>
+            <div class="form-group mb-0" style="max-width: 400px;">
+              <label for="cfg-filename-date-order" style="font-size: 0.82rem; font-weight: 600;">Filename Date Order Preference</label>
+              <select id="cfg-filename-date-order" class="form-control" style="font-size: 0.82rem; padding: 0.35rem 0.6rem;">
+                <option value="auto">Auto-detect (Smart detection based on day/month values)</option>
+                <option value="ymd">Year-Month-Day (YYYY-MM-DD / ISO 8601)</option>
+                <option value="mdy">Month-Day-Year (MM-DD-YYYY / US Standard)</option>
+                <option value="dmy">Day-Month-Year (DD-MM-YYYY / International Standard)</option>
+              </select>
+              <small class="helper-text" style="font-size: 0.75rem;">Determines how ambiguous numeric dates (such as 04-05-2022) are parsed from filenames.</small>
+            </div>
           </div>
 
           <details class="mt-3" style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem;">
