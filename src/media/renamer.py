@@ -895,6 +895,7 @@ def update_file_date_and_metadata(
                 jdata["file"]["metadata"]["date_source_used"] = "confirmed_update"
                 jdata.pop("pending_date_proposal", None)
                 if "analysis" in jdata and isinstance(jdata["analysis"], dict):
+                    jdata["analysis"].pop("pending_date_proposal", None)
                     if "detected_date_in_context" in jdata["analysis"]:
                         jdata["analysis"]["detected_date_in_context"] = iso_date
                 with open(jc, "w", encoding="utf-8") as jf:

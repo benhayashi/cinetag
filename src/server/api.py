@@ -1701,10 +1701,11 @@ def confirm_date_update(req: DateConfirmUpdateRequest):
             try:
                 with open(json_p, "r", encoding="utf-8") as jf:
                     data = json.load(jf)
-                if "pending_date_proposal" in data:
-                    data.pop("pending_date_proposal", None)
-                    with open(json_p, "w", encoding="utf-8") as jf:
-                        json.dump(data, jf, indent=2, ensure_ascii=False)
+                data.pop("pending_date_proposal", None)
+                if "analysis" in data and isinstance(data["analysis"], dict):
+                    data["analysis"].pop("pending_date_proposal", None)
+                with open(json_p, "w", encoding="utf-8") as jf:
+                    json.dump(data, jf, indent=2, ensure_ascii=False)
             except Exception as e:
                 logger.warning(f"Failed to clear pending_date_proposal in {json_p}: {e}")
 
@@ -1722,14 +1723,14 @@ def confirm_date_update(req: DateConfirmUpdateRequest):
                 try:
                     with open(json_p, "r", encoding="utf-8") as jf:
                         data = json.load(jf)
-                    proposal = data.get("pending_date_proposal")
+                    proposal = data.get("pending_date_proposal") or data.get("analysis", {}).get("pending_date_proposal")
                     if proposal:
                         new_date = proposal.get("proposed_datetime_iso") or proposal.get("proposed_date")
                 except Exception:
                     pass
 
         if not new_date:
-            task_match = next((t for t in manager.queue if t.file_path == str(p.resolve())), None)
+            task_match = next((t for t in manager.queue if t.file_path == str(p.resolve()) or (t.result and t.result.get("final_file_path") == str(p.resolve()))), None)
             if task_match and task_match.result:
                 prop = task_match.result.get("pending_date_proposal")
                 if prop:
@@ -2265,7 +2266,7 @@ def get_video_results(file_path: str):
                 model = analysis.get("model", "")
                 processed_at = analysis.get("processed_at")
                 creation_time = jdata.get("file", {}).get("metadata", {}).get("creation_time") or jdata.get("metadata", {}).get("creation_time")
-                pending_date_proposal = jdata.get("pending_date_proposal")
+                pending_date_proposal = jdata.get("pending_date_proposal") or jdata.get("analysis", {}).get("pending_date_proposal")
                 detected_date_in_context = analysis.get("detected_date_in_context")
                 detected_date_evidence = analysis.get("detected_date_evidence")
                 date_source_used = jdata.get("file", {}).get("metadata", {}).get("date_source_used") or jdata.get("metadata", {}).get("date_source_used")
@@ -2348,6 +2349,7 @@ def get_video_results(file_path: str):
 
     return {
         "status": "ok",
+        "task_id": task_match.id if task_match else None,
         "filename": name,
         "file_path": str(p.resolve()),
         "title": title or stem,

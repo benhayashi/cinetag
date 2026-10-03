@@ -939,6 +939,14 @@ function renderLatestResult(task) {
     const prop = res.pending_date_proposal;
     if (prop && prop.status === "pending") {
       latestProposalBanner.classList.remove("hidden");
+      if (btnLatestApply) {
+        btnLatestApply.disabled = false;
+        btnLatestApply.textContent = "✓ Update Date";
+      }
+      if (btnLatestDismiss) {
+        btnLatestDismiss.disabled = false;
+        btnLatestDismiss.textContent = "✕ Dismiss";
+      }
       const curFormatted = prop.current_date_formatted || prop.current_date;
       const propFormatted = prop.proposed_date_formatted || prop.proposed_date;
       const sourceLabel = prop.source === "context" ? "Video visual/audio context" : "Filename";
@@ -967,13 +975,16 @@ function renderLatestResult(task) {
               latestProposalBanner.classList.add("hidden");
               if (window.pollStatus) window.pollStatus();
             } else {
-              const err = await updRes.json();
-              alert("Failed to update date: " + (err.detail || JSON.stringify(err)));
-              btnLatestApply.disabled = false;
-              btnLatestApply.textContent = "✓ Update Date";
+              let errDetail = `${updRes.status} ${updRes.statusText}`;
+              try {
+                const err = await updRes.json();
+                errDetail = err.detail || errDetail;
+              } catch (_) {}
+              alert("Failed to update date: " + errDetail);
             }
           } catch (e) {
             alert("Error updating date: " + e.message);
+          } finally {
             btnLatestApply.disabled = false;
             btnLatestApply.textContent = "✓ Update Date";
           }
@@ -982,6 +993,7 @@ function renderLatestResult(task) {
       if (btnLatestDismiss) {
         btnLatestDismiss.onclick = async () => {
           btnLatestDismiss.disabled = true;
+          btnLatestDismiss.textContent = "Dismissing...";
           try {
             await fetch("/api/date/confirm-update", {
               method: "POST",
@@ -999,6 +1011,7 @@ function renderLatestResult(task) {
             latestProposalBanner.classList.add("hidden");
           } finally {
             btnLatestDismiss.disabled = false;
+            btnLatestDismiss.textContent = "✕ Dismiss";
           }
         };
       }
@@ -3607,6 +3620,14 @@ async function openResultsModal(filePath) {
       const prop = data.pending_date_proposal;
       if (prop && prop.status === "pending") {
         proposalBanner.classList.remove("hidden");
+        if (btnApplyDate) {
+          btnApplyDate.disabled = false;
+          btnApplyDate.textContent = "✓ Update Date";
+        }
+        if (btnDismissDate) {
+          btnDismissDate.disabled = false;
+          btnDismissDate.textContent = "✕ Keep Original";
+        }
         const curFormatted = prop.current_date_formatted || prop.current_date;
         const propFormatted = prop.proposed_date_formatted || prop.proposed_date;
         const sourceLabel = prop.source === "context" ? "Video visual/audio context" : "Original filename";
@@ -3620,29 +3641,37 @@ async function openResultsModal(filePath) {
           btnApplyDate.onclick = async () => {
             btnApplyDate.disabled = true;
             btnApplyDate.textContent = "Updating...";
+            const activePath = data.file_path || filePath;
             try {
               const res = await fetch("/api/date/confirm-update", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  file_path: filePath,
+                  file_path: activePath,
                   action: "apply",
-                  new_date: prop.proposed_datetime_iso || prop.proposed_date
+                  new_date: prop.proposed_datetime_iso || prop.proposed_date,
+                  task_id: data.task_id || null
                 })
               });
               if (res.ok) {
                 const resData = await res.json();
                 proposalBanner.classList.add("hidden");
-                const updatedPath = resData.final_path || filePath;
+                const updatedPath = resData.final_path || activePath;
+                if (window.pollStatus) {
+                  try { window.pollStatus(); } catch (_) {}
+                }
                 await openResultsModal(updatedPath);
               } else {
-                const err = await res.json();
-                alert("Failed to update date: " + (err.detail || JSON.stringify(err)));
-                btnApplyDate.disabled = false;
-                btnApplyDate.textContent = "✓ Update Date";
+                let errDetail = `${res.status} ${res.statusText}`;
+                try {
+                  const err = await res.json();
+                  errDetail = err.detail || errDetail;
+                } catch (_) {}
+                alert("Failed to update date: " + errDetail);
               }
             } catch (e) {
               alert("Error updating date: " + e.message);
+            } finally {
               btnApplyDate.disabled = false;
               btnApplyDate.textContent = "✓ Update Date";
             }
@@ -3651,21 +3680,28 @@ async function openResultsModal(filePath) {
         if (btnDismissDate) {
           btnDismissDate.onclick = async () => {
             btnDismissDate.disabled = true;
+            btnDismissDate.textContent = "Dismissing...";
+            const activePath = data.file_path || filePath;
             try {
               await fetch("/api/date/confirm-update", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  file_path: filePath,
-                  action: "dismiss"
+                  file_path: activePath,
+                  action: "dismiss",
+                  task_id: data.task_id || null
                 })
               });
               proposalBanner.classList.add("hidden");
+              if (window.pollStatus) {
+                try { window.pollStatus(); } catch (_) {}
+              }
             } catch (e) {
               console.error("Error dismissing date proposal", e);
               proposalBanner.classList.add("hidden");
             } finally {
               btnDismissDate.disabled = false;
+              btnDismissDate.textContent = "✕ Keep Original";
             }
           };
         }

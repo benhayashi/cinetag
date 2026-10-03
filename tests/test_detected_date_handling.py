@@ -219,3 +219,75 @@ def test_queue_manager_update_and_dismiss_task_date():
     finally:
         if task in manager.queue:
             manager.queue.remove(task)
+
+
+def test_sequential_date_updates_and_analysis_nested_proposals(tmp_path):
+    # Clip 1
+    vid1 = tmp_path / "vid1.mp4"
+    vid1.write_text("vid1")
+    info1 = tmp_path / "vid1.info.json"
+    info1.write_text(json.dumps({
+        "file": {"name": "vid1.mp4", "path": str(vid1), "metadata": {"creation_time": "2000-01-01T00:00:00"}},
+        "analysis": {
+            "title": "Clip 1",
+            "pending_date_proposal": {
+                "proposed_date": "1992-04-10",
+                "proposed_datetime_iso": "1992-04-10T12:00:00",
+                "status": "pending"
+            }
+        }
+    }))
+
+    # Clip 2
+    vid2 = tmp_path / "vid2.mp4"
+    vid2.write_text("vid2")
+    info2 = tmp_path / "vid2.info.json"
+    info2.write_text(json.dumps({
+        "file": {"name": "vid2.mp4", "path": str(vid2), "metadata": {"creation_time": "2000-01-01T00:00:00"}},
+        "analysis": {
+            "title": "Clip 2",
+            "pending_date_proposal": {
+                "proposed_date": "1993-08-20",
+                "proposed_datetime_iso": "1993-08-20T15:30:00",
+                "status": "pending"
+            }
+        }
+    }))
+
+    # 1. Fetch Clip 1 results and verify nested proposal is parsed and task_id returned
+    res1 = client.get(f"/api/results?file_path={str(vid1)}")
+    assert res1.status_code == 200
+    d1 = res1.json()
+    assert d1["pending_date_proposal"]["proposed_date"] == "1992-04-10"
+
+    # Update Clip 1
+    upd1 = client.post("/api/date/confirm-update", json={
+        "file_path": str(vid1),
+        "action": "apply",
+        "new_date": d1["pending_date_proposal"]["proposed_datetime_iso"]
+    })
+    assert upd1.status_code == 200
+    assert upd1.json()["status"] == "success"
+
+    # Verify Clip 1 proposal is cleared from analysis in JSON
+    info1_reloaded = json.loads(info1.read_text(encoding="utf-8"))
+    assert "pending_date_proposal" not in info1_reloaded.get("analysis", {})
+    assert "pending_date_proposal" not in info1_reloaded
+
+    # 2. Immediately fetch Clip 2 results and update Clip 2 (subsequent file)
+    res2 = client.get(f"/api/results?file_path={str(vid2)}")
+    assert res2.status_code == 200
+    d2 = res2.json()
+    assert d2["pending_date_proposal"]["proposed_date"] == "1993-08-20"
+
+    upd2 = client.post("/api/date/confirm-update", json={
+        "file_path": str(vid2),
+        "action": "apply",
+        "new_date": d2["pending_date_proposal"]["proposed_datetime_iso"]
+    })
+    assert upd2.status_code == 200
+    assert upd2.json()["status"] == "success"
+
+    info2_reloaded = json.loads(info2.read_text(encoding="utf-8"))
+    assert "pending_date_proposal" not in info2_reloaded.get("analysis", {})
+    assert info2_reloaded["file"]["metadata"]["creation_time"] == "1993-08-20T15:30:00"

@@ -243,11 +243,15 @@ class QueueManager:
             resolved_p = str(Path(file_path).resolve())
             target_task = None
             for t in self.queue:
-                if (task_id and t.id == task_id) or str(Path(t.file_path).resolve()) == resolved_p:
+                t_p = str(Path(t.file_path).resolve())
+                t_final = str(Path(t.result.get("final_file_path", "")).resolve()) if (t.result and t.result.get("final_file_path")) else ""
+                if (task_id and t.id == task_id) or t_p == resolved_p or (t_final and t_final == resolved_p):
                     target_task = t
                     break
             if not target_task and self.current_task:
-                if (task_id and self.current_task.id == task_id) or str(Path(self.current_task.file_path).resolve()) == resolved_p:
+                c_p = str(Path(self.current_task.file_path).resolve())
+                c_final = str(Path(self.current_task.result.get("final_file_path", "")).resolve()) if (self.current_task.result and self.current_task.result.get("final_file_path")) else ""
+                if (task_id and self.current_task.id == task_id) or c_p == resolved_p or (c_final and c_final == resolved_p):
                     target_task = self.current_task
 
             if target_task:
@@ -268,11 +272,15 @@ class QueueManager:
             resolved_p = str(Path(file_path).resolve())
             target_task = None
             for t in self.queue:
-                if (task_id and t.id == task_id) or str(Path(t.file_path).resolve()) == resolved_p:
+                t_p = str(Path(t.file_path).resolve())
+                t_final = str(Path(t.result.get("final_file_path", "")).resolve()) if (t.result and t.result.get("final_file_path")) else ""
+                if (task_id and t.id == task_id) or t_p == resolved_p or (t_final and t_final == resolved_p):
                     target_task = t
                     break
             if not target_task and self.current_task:
-                if (task_id and self.current_task.id == task_id) or str(Path(self.current_task.file_path).resolve()) == resolved_p:
+                c_p = str(Path(self.current_task.file_path).resolve())
+                c_final = str(Path(self.current_task.result.get("final_file_path", "")).resolve()) if (self.current_task.result and self.current_task.result.get("final_file_path")) else ""
+                if (task_id and self.current_task.id == task_id) or c_p == resolved_p or (c_final and c_final == resolved_p):
                     target_task = self.current_task
 
             if target_task and target_task.result:
