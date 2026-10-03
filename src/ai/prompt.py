@@ -8,7 +8,7 @@ Analyze the provided sequential video frames and audio transcript to understand 
 
 You must respond in valid JSON with the following structure:
 {
-  "title": "Brief descriptive title (3-7 words, e.g. Kids Playing Tennis in the Backyard)",
+  "title": "Brief descriptive title (3-5 words in title case, e.g. Kids Backyard Tennis Match)",
   "summary": "Thorough paragraph explaining who is there, what is happening, the environment, actions, lighting, and general mood.",
   "events": [
     {
@@ -31,10 +31,10 @@ Important Rules:
 2. If animals or pets (especially dogs or cats) are present, list them in "animals_or_pets" with specific breed or type whenever identifiable (e.g. "Golden Retriever", "Beagle", "Bulldog", "Pug", "Tabby Cat").
 3. In "objects", list prominent physical items, sports gear, equipment, instruments, tools, or vehicles (e.g. "tennis racket", "acoustic guitar", "bicycle", "skateboard", "camera").
 4. If key moments stand out as memorable or exciting, set "is_highlight": true.
-5. Keep the suggested_filename lowercase with underscores, without extension or dates.
+5. AI Suggested Filename Slug: Compose 'suggested_filename' as a descriptive, balanced 3-5 word slug in lowercase with underscores, without file extension or dates. CRITICAL: Include key details such as recognized person/family names, locations, and the specific action or event (e.g. 'grandma_betty_80th_birthday', 'johnny_soccer_goal', 'family_hiking_yosemite', 'sarah_beach_sunset', not vague generic words like 'birthday' or 'playing').
 6. Number Formatting: ALWAYS use numeric digits (0-9) instead of written words for numbers and counts (e.g. use "3" instead of "three", "2" instead of "two", "5yo" instead of "five year old", "1st" instead of "first") across titles, summaries, tags, people/subject labels, and event descriptions to conserve character limits.
 7. Concise Acronyms & Abbreviations: Use common acronyms and abbreviations in titles and descriptions where applicable to save characters (e.g. "yo" for "year old" like "3yo boy", "USA" for "United States of America", "NYC" for "New York City", "UK", "bday" for "birthday", "Xmas" for "Christmas").
-8. Title Quality: Keep titles complete, descriptive, and concise (3-6 words). Ensure the title is a finished thought and NEVER ends abruptly or in the middle of a word.
+8. Title Quality: Keep titles complete, descriptive, and concise (strictly 3-5 words in title case). DO NOT use quotation marks, colons, semicolons, dashes, exclamation marks, or conversational filler (e.g. use 'Grandma 80th Birthday Party', 'Johnny Scoring Soccer Goal', not 'Our Amazing Vacation: A Fun Day!'). Ensure the title is a finished thought and NEVER ends abruptly or in the middle of a word.
 9. Output ONLY the raw JSON object, without introductory text or markdown formatting if possible.
 10. Filename Clues & Historical Metadata: When original filename context clues (such as people's names, event titles, locations, or dates) are provided, verify them against visual and audible cues. If consistent with the footage, incorporate them into "people_or_subjects", the "title", the "summary", "tags", and "suggested_filename".
 11. Date & Time Clues in Video Context: Look closely for any visible or audible date/time information in the footage (e.g. wall or desk calendar with visible month/year/day, camcorder timestamp overlay in corner, newspaper date, event banners like 'Class of 2012' or '50th Anniversary 1998', birthday cakes, holiday decorations, or spoken dates in speech). If detected, report 'detected_date_in_context' (format as YYYY-MM-DD, YYYY-MM, or YYYY) and 'detected_date_evidence' (e.g. 'Wall calendar shows October 2014'). If no date information is detected in context, set both to null.
@@ -133,15 +133,29 @@ def parse_ai_response(raw_text: str, default_title: str = "Home Video") -> Video
         detected_date_in_ctx = data.get("detected_date_in_context") or data.get("detected_date") or None
         detected_date_evid = data.get("detected_date_evidence") or data.get("date_evidence") or None
 
+        raw_title = str(data.get("title", default_title)).strip()
+        clean_title = raw_title
+        for _ in range(3):
+            clean_title = clean_title.strip("\"'`«»“” \t\n")
+            clean_title = re.sub(r'[\s:;,-]+$', '', clean_title).strip()
+        if not clean_title:
+            clean_title = default_title
+
+        raw_slug = str(data.get("suggested_filename", "")).strip()
+        for _ in range(3):
+            raw_slug = raw_slug.strip("\"'`«»“” \t\n")
+            raw_slug = re.sub(r'[\s:;,-]+$', '', raw_slug).strip()
+        clean_slug = raw_slug.replace(" ", "_")
+
         return VideoAnalysisResult(
-            title=data.get("title", default_title),
+            title=clean_title,
             summary=data.get("summary", clean_text[:300]),
             events=events,
             tags=tags,
             people_or_subjects=data.get("people_or_subjects", []),
             animals_or_pets=animals,
             objects=objects,
-            suggested_filename=data.get("suggested_filename", ""),
+            suggested_filename=clean_slug,
             detected_date_in_context=str(detected_date_in_ctx).strip() if detected_date_in_ctx else None,
             detected_date_evidence=str(detected_date_evid).strip() if detected_date_evid else None,
             raw_response=raw_text
@@ -149,12 +163,13 @@ def parse_ai_response(raw_text: str, default_title: str = "Home Video") -> Video
     except Exception:
         # Fallback parser for non-JSON model output
         lines = clean_text.splitlines()
-        first_line = lines[0].strip() if lines else default_title
+        first_line = lines[0].strip().strip("\"'`«»“”") if lines else default_title
         if len(first_line) > 60:
             last_space = first_line[:60].rfind(" ")
             title = first_line[:last_space].strip() if last_space > 10 else first_line[:60].strip()
         else:
             title = first_line
+        title = re.sub(r'[\s:;,-]+$', '', title).strip() or default_title
         events: List[TimestampEvent] = []
         for line in lines:
             ts_match = re.match(r'^(?:★\s*)?(\d{1,2}:\d{2}(?::\d{2})?)\s*[-—:]?\s*(.*)', line.strip())

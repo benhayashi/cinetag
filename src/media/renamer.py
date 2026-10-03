@@ -88,8 +88,14 @@ def truncate_at_word_boundary(text: str, max_length: int, delimiter: str = "_") 
 
 def sanitize_filename(name: str) -> str:
     """Sanitize string to be safe across Windows, Linux, and macOS filesystems."""
-    # Replace illegal filesystem characters: / \ : * ? " < > |
-    cleaned = re.sub(r'[\\/*?:"<>|]', "", name)
+    if not name:
+        return "unnamed_video"
+    # First normalize possessives like Grandma's -> Grandmas, Tommy's -> Tommys
+    cleaned = re.sub(r"(\w+)'s\b", r"\1s", name)
+    # Replace illegal filesystem and noisy punctuation characters:
+    # / \ : * ? " < > | as well as quotes, apostrophes, commas, semicolons, exclamation marks, brackets/braces
+    cleaned = re.sub(r'[\'"`!?,;:()[\]{}<>]', "", cleaned)
+    cleaned = re.sub(r'[\\/*|]', "", cleaned)
     # Replace multiple spaces/underscores with single underscore
     cleaned = re.sub(r'[\s_]+', "_", cleaned)
     # Strip leading/trailing dots or underscores

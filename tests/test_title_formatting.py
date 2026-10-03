@@ -99,3 +99,38 @@ def test_fallback_parser_word_boundary_title():
     # Must not end in the middle of a word
     assert not res.title.endswith("mod")
     assert len(res.title) <= 60
+
+
+def test_sanitize_filename_cleans_possessives_and_punctuation():
+    # Apostrophes should become 's' rather than '_s' or breaking filesystems
+    # Punctuation like colons, exclamation marks, and quotes should be cleanly stripped
+    raw = ' "Grandma\'s 80th Birthday: A Great Celebration!" '
+    sanitized = sanitize_filename(raw)
+    assert sanitized == "Grandmas_80th_Birthday_A_Great_Celebration"
+    assert "'" not in sanitized
+    assert ":" not in sanitized
+    assert "!" not in sanitized
+    assert '"' not in sanitized
+
+
+def test_parse_ai_response_cleans_quotes_and_trailing_punctuation():
+    json_ai = """{
+        "title": "\\"Tommy's Soccer Match Championship!\\":",
+        "suggested_filename": "\\"tommy_soccer_championship_goal\\" ",
+        "summary": "Tommy playing soccer and scoring the winning goal."
+    }"""
+    res = parse_ai_response(json_ai)
+    # Surrounding quotes and trailing colons/dashes stripped
+    assert res.title == "Tommy's Soccer Match Championship!"
+    assert res.suggested_filename == "tommy_soccer_championship_goal"
+
+
+def test_prompt_rules_for_title_and_slug_detail():
+    prompt = get_system_prompt()
+    # Check AI Slug detail instruction
+    assert "AI Suggested Filename Slug" in prompt
+    assert "Include key details such as recognized person/family names" in prompt
+    assert "grandma_betty_80th_birthday" in prompt
+    # Check title conciseness and character cleanliness instruction
+    assert "strictly 3-5 words in title case" in prompt
+    assert "DO NOT use quotation marks, colons, semicolons" in prompt
