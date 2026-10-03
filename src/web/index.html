@@ -311,14 +311,33 @@
               <span id="queue-engine-badge" class="badge-tag" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; font-size:0.75rem;">Sequential</span>
             </div>
             <div class="header-btns" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <input type="file" id="input-load-processed" accept=".json,.mp4,.mkv,.mov,.avi,.webm" multiple class="hidden">
+              <button id="btn-queue-load-processed" class="btn btn-sm btn-secondary" title="Load previously processed video files and sidecars from disk">📂 Load Processed...</button>
               <button id="btn-queue-add-files" class="btn btn-sm btn-primary">🎬 + Add Video File(s)...</button>
               <button id="btn-queue-clear-completed" class="btn btn-sm btn-secondary" title="Remove completed tasks from the queue list">🧹 Clear Completed</button>
             </div>
           </div>
+
+          <!-- Series Action Toolbar (Appears when >= 1 completed task is checked) -->
+          <div id="queue-series-toolbar" class="hidden" style="display:flex; align-items:center; justify-content:space-between; padding:0.6rem 0.85rem; margin-bottom:0.75rem; background:rgba(30, 41, 59, 0.7); border:1px solid rgba(59, 130, 246, 0.4); border-radius:8px; gap:0.5rem; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:0.6rem;">
+              <span style="font-size:0.85rem; font-weight:600; color:#93c5fd;">
+                <span id="series-selected-count">0</span> completed clip(s) selected
+              </span>
+              <button id="btn-clear-series-selection" class="btn btn-sm btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.5rem;">✕ Clear Selection</button>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <button id="btn-open-series-rename" class="btn btn-sm btn-primary" style="background:#2563eb; border-color:#1d4ed8; font-weight:600;">
+                🔢 Rename Series / Enumerate...
+              </button>
+            </div>
+          </div>
+
           <div class="table-container">
             <table class="data-table" id="queue-table">
               <thead>
                 <tr>
+                  <th width="35" style="text-align:center;"><input type="checkbox" id="queue-select-all-completed" title="Select all completed items for series renaming"></th>
                   <th width="45">#</th>
                   <th>Video File & Path</th>
                   <th>Source Folder</th>
@@ -328,7 +347,7 @@
               </thead>
               <tbody id="queue-tbody">
                 <tr>
-                  <td colspan="5" class="empty-state">No videos in processing queue. Add files above or select clips to begin.</td>
+                  <td colspan="6" class="empty-state">No videos in processing queue. Add files above or select clips to begin.</td>
                 </tr>
               </tbody>
             </table>
@@ -1865,6 +1884,148 @@
         <button id="btn-cancel-rename-modal" class="btn btn-secondary">Cancel</button>
         <button id="btn-confirm-rename-modal" class="btn btn-primary" style="background:#10b981; border-color:#059669;">
           💾 Confirm & Rename
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Series Renaming & Sequential Enumeration -->
+  <div id="modal-series-rename" class="modal-backdrop hidden">
+    <div class="modal-dialog" style="max-width: 820px; width: 95%;">
+      <div class="modal-header flex-between">
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <span style="font-size:1.4rem;">🔢</span>
+          <div>
+            <h2 style="font-size:1.15rem; margin-bottom:2px;">Series Renaming & Sequential Enumeration</h2>
+            <span class="subtext">Sequentially rename split clips and sync all sidecars (.info.json, .srt, .txt, etc.)</span>
+          </div>
+        </div>
+        <button id="btn-close-series-modal" class="modal-close-btn" title="Close">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.25rem 1.5rem; overflow-y: auto; max-height: 75vh;">
+        <!-- Series Sequence List & Reordering Controls -->
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem; flex-wrap:wrap; gap:0.5rem;">
+            <div>
+              <span style="font-size:0.75rem; color:#94a3b8; text-transform:uppercase; font-weight:600; letter-spacing:0.5px;">
+                Selected Clips Sequence (<span id="series-items-count">0</span> clips)
+              </span>
+              <div style="font-size:0.75rem; color:#64748b;">Clips will be enumerated in this order from top to bottom.</div>
+            </div>
+            <div style="display:flex; gap:0.35rem; align-items:center;">
+              <button id="btn-series-sort-date-asc" class="btn btn-sm btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.5rem;" title="Sort items chronologically oldest first">📅 Date Asc ⬆️</button>
+              <button id="btn-series-sort-date-desc" class="btn btn-sm btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.5rem;" title="Sort items chronologically newest first">📅 Date Desc ⬇️</button>
+              <button id="btn-series-sort-name" class="btn btn-sm btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.5rem;" title="Sort items alphabetically by filename">🔤 Filename</button>
+            </div>
+          </div>
+
+          <div id="series-items-list" style="display:flex; flex-direction:column; gap:0.4rem; max-height:200px; overflow-y:auto; padding-right:4px;">
+            <!-- Rendered list of items with move up/down buttons -->
+          </div>
+        </div>
+
+        <!-- Series Title / AI Slug -->
+        <div class="form-group mb-3">
+          <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.4rem; color:var(--text-main);">
+            Series Title / Common Slug:
+          </label>
+          <input type="text" id="series-title-input" class="form-control" placeholder="e.g. Hawaii Vacation Beach" style="width:100%; font-size:0.95rem; padding:0.5rem 0.75rem;">
+          <small class="text-muted" style="display:block; margin-top:0.3rem; font-size:0.75rem;">
+            Common title or AI slug applied across all clips in the series before sequential enumeration.
+          </small>
+        </div>
+
+        <!-- Renaming Format & Enumeration Scheme Settings -->
+        <div style="background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1rem;">
+          <div style="font-size:0.8rem; font-weight:600; color:#cbd5e1; margin-bottom:0.6rem;">Naming Scheme & Enumeration Settings:</div>
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem;">
+            <div>
+              <label style="display:block; font-size:0.75rem; color:#94a3b8; margin-bottom:0.25rem;">Naming Scheme:</label>
+              <select id="series-scheme-select" class="form-control" style="width:100%; font-size:0.85rem; padding:0.35rem 0.5rem;">
+                <option value="datetime_title_enum" selected>Compact Date + Zulu Time + Title + Enum (20240704_143000Z_Title_pt01)</option>
+                <option value="date_time_title_enum">YYYY-MM-DD + Time + Title + Enum (2024-07-04_14-30-00_Title_pt01)</option>
+                <option value="date_title_enum">Date + Title + Enum (20240704_Title_pt01)</option>
+                <option value="ai_slug_enum">Direct AI Slug + Enum (title_pt01)</option>
+                <option value="date_ai_slug_enum">Date + AI Slug + Enum (20240704_title_pt01)</option>
+                <option value="title_enum">Title + Enum (Title_pt01)</option>
+                <option value="custom">Configured Template Format</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block; font-size:0.75rem; color:#94a3b8; margin-bottom:0.25rem;">Enumeration Style:</label>
+              <select id="series-enum-style-select" class="form-control" style="width:100%; font-size:0.85rem; padding:0.35rem 0.5rem;">
+                <option value="pt" selected>_pt01, _pt02, _pt03</option>
+                <option value="part">_part01, _part02, _part03</option>
+                <option value="numeric">_01, _02, _03</option>
+                <option value="hyphen">-01, -02, -03</option>
+                <option value="count">_01_of_03, _02_of_03</option>
+                <option value="title_part"> (Part 1),  (Part 2)</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block; font-size:0.75rem; color:#94a3b8; margin-bottom:0.25rem;">Date/Time Strategy:</label>
+              <select id="series-date-strategy-select" class="form-control" style="width:100%; font-size:0.85rem; padding:0.35rem 0.5rem;">
+                <option value="individual" selected>Individual (each clip uses its own recorded timestamp)</option>
+                <option value="series_start">Series Start (all clips share 1st clip's timestamp)</option>
+              </select>
+            </div>
+            <div style="display:flex; gap:0.5rem;">
+              <div style="flex:1;">
+                <label style="display:block; font-size:0.75rem; color:#94a3b8; margin-bottom:0.25rem;">Start Index:</label>
+                <input type="number" id="series-start-index" class="form-control" value="1" min="0" max="999" style="width:100%; font-size:0.85rem; padding:0.35rem 0.5rem;">
+              </div>
+              <div style="flex:1;">
+                <label style="display:block; font-size:0.75rem; color:#94a3b8; margin-bottom:0.25rem;">Pad Digits:</label>
+                <input type="number" id="series-pad-digits" class="form-control" value="2" min="1" max="5" style="width:100%; font-size:0.85rem; padding:0.35rem 0.5rem;">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Preview Box -->
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+            <span style="font-size:0.75rem; text-transform:uppercase; font-weight:600; color:#34d399; letter-spacing:0.5px;">Sequential Renaming Plan Preview</span>
+            <span id="series-preview-spinner" class="hidden" style="font-size:0.75rem; color:#94a3b8;">Computing preview...</span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="data-table" style="font-size:0.8rem; margin:0;" id="series-preview-table">
+              <thead>
+                <tr>
+                  <th width="35">#</th>
+                  <th>Original Filename</th>
+                  <th>Planned New Filename</th>
+                  <th>New Title</th>
+                  <th width="80">Sidecars</th>
+                </tr>
+              </thead>
+              <tbody id="series-preview-tbody">
+                <tr>
+                  <td colspan="5" class="empty-state">No clips selected</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Options -->
+        <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom: 0.5rem;">
+          <label class="checkbox-label" style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; cursor:pointer;">
+            <input type="checkbox" id="series-opt-sidecars" checked>
+            <span>Automatically rename accompanying support files (<code style="color:#38bdf8;">.srt</code>, <code style="color:#38bdf8;">.txt</code>, <code style="color:#38bdf8;">.info.json</code>, etc.)</span>
+          </label>
+          <label class="checkbox-label" style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; cursor:pointer;">
+            <input type="checkbox" id="series-opt-metadata" checked>
+            <span>Update internal metadata title (e.g. <span style="color:#38bdf8;">"Hawaii Beach (Part 1)"</span> in .info.json, .txt, .nfo)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="modal-footer flex-between" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
+        <button id="btn-cancel-series-modal" class="btn btn-secondary">Cancel</button>
+        <button id="btn-confirm-series-modal" class="btn btn-primary" style="background:#10b981; border-color:#059669; font-weight:600;">
+          🚀 Execute Series Rename
         </button>
       </div>
     </div>

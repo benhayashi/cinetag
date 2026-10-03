@@ -854,3 +854,189 @@ def undo_last_rename() -> Optional[Dict[str, Any]]:
         "reverted_from": str(to_path),
         "restored_to": str(from_path)
     }
+
+def format_enumeration(index: int, total: int, style: str = "pt", pad_digits: int = 2) -> str:
+    """
+    Format a series enumeration suffix.
+    Styles:
+      - 'pt': '_pt01', '_pt02'
+      - 'part': '_part01', '_part02'
+      - 'numeric': '_01', '_02'
+      - 'hyphen': '-01', '-02'
+      - 'count': '_01_of_03', '_02_of_03'
+      - 'title_part': ' (Part 1)', ' (Part 2)'
+      - 'none': ''
+    """
+    num_str = str(index).zfill(pad_digits)
+    total_str = str(total).zfill(pad_digits)
+    style_norm = (style or "pt").lower().strip()
+
+    if style_norm == "pt":
+        return f"_pt{num_str}"
+    elif style_norm == "part":
+        return f"_part{num_str}"
+    elif style_norm == "numeric":
+        return f"_{num_str}"
+    elif style_norm == "hyphen":
+        return f"-{num_str}"
+    elif style_norm == "count":
+        return f"_{num_str}_of_{total_str}"
+    elif style_norm in ("title_part", "title"):
+        return f" (Part {index})"
+    elif style_norm == "none":
+        return ""
+    else:
+        return f"_{num_str}"
+
+def generate_series_rename_plan(
+    items: List[Dict[str, Any]],
+    series_title: str,
+    scheme: str = "datetime_title_enum",
+    enum_style: str = "pt",
+    pad_digits: int = 2,
+    start_index: int = 1,
+    time_strategy: str = "individual",
+    date_source: str = "smart",
+    date_order: str = "auto",
+    rename_template: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    Computes a conflict-free sequential renaming plan for multiple video items in a series.
+    Each item dict should contain at least:
+      - 'file_path': str or Path
+      Optional:
+      - 'creation_date': str
+      - 'date_override': str
+      - 'original_filename': str
+      - 'title': str
+      - 'suggested_slug': str
+    """
+    plan = []
+    total_count = len(items)
+    reserved_paths: Set[Path] = set()
+
+    clean_series_title = sanitize_filename(normalize_title_acronyms_and_numbers(series_title.strip())) if series_title and series_title.strip() else "series"
+    clean_series_slug = clean_series_title.lower()
+
+    # Pre-resolve series start datetime if needed
+    start_dt_local: Optional[datetime] = None
+    start_dt_utc: Optional[datetime] = None
+    if time_strategy == "series_start" and items:
+        first_item = items[0]
+        fp_first = Path(first_item.get("file_path", ""))
+        c_date = first_item.get("creation_date")
+        d_override = first_item.get("date_override")
+        orig_fn = first_item.get("original_filename") or (fp_first.name if fp_first else "")
+        start_dt_local, start_dt_utc, _ = resolve_datetime(
+            original_path=fp_first,
+            creation_date=c_date,
+            date_override=d_override,
+            date_source=date_source,
+            original_filename=orig_fn,
+            date_order=date_order
+        )
+
+    for i, it in enumerate(items):
+        item_index = i + start_index
+        orig_path = Path(it.get("file_path", ""))
+        if not orig_path.exists():
+            continue
+
+        c_date = it.get("creation_date")
+        d_override = it.get("date_override")
+        orig_fn = it.get("original_filename") or orig_path.name
+
+        if time_strategy == "series_start" and start_dt_local and start_dt_utc:
+            dt_local, dt_utc = start_dt_local, start_dt_utc
+        else:
+            dt_local, dt_utc, _ = resolve_datetime(
+                original_path=orig_path,
+                creation_date=c_date,
+                date_override=d_override,
+                date_source=date_source,
+                original_filename=orig_fn,
+                date_order=date_order
+            )
+
+        date_compact = dt_local.strftime("%Y%m%d")
+        date_str = dt_local.strftime("%Y-%m-%d")
+        time_str = dt_local.strftime("%H%M%S")
+        time_dashed = dt_local.strftime("%H-%M-%S")
+        time_zulu = dt_utc.strftime("%H%M%S")
+        time_zulu_dashed = dt_utc.strftime("%H-%M-%S")
+
+        enum_str = format_enumeration(item_index, total_count + start_index - 1, style=enum_style, pad_digits=pad_digits)
+        ext = orig_path.suffix.lower()
+
+        # Build base filename according to scheme
+        if scheme == "datetime_title_enum":
+            stem = f"{date_compact}_{time_zulu}_{clean_series_title}{enum_str}"
+        elif scheme == "date_time_title_enum":
+            stem = f"{date_str}_{time_str}_{clean_series_title}{enum_str}"
+        elif scheme == "date_title_enum":
+            stem = f"{date_compact}_{clean_series_title}{enum_str}"
+        elif scheme == "ai_slug_enum":
+            stem = f"{clean_series_slug}{enum_str}"
+        elif scheme == "date_ai_slug_enum":
+            stem = f"{date_compact}_{clean_series_slug}{enum_str}"
+        elif scheme == "title_enum":
+            stem = f"{clean_series_title}{enum_str}"
+        elif scheme == "custom" and rename_template:
+            subs = defaultdict(str, {
+                "date": date_str,
+                "date_compact": date_compact,
+                "year": dt_local.strftime("%Y"),
+                "month": dt_local.strftime("%m"),
+                "day": dt_local.strftime("%d"),
+                "time": time_str,
+                "time_dashed": time_dashed,
+                "time_zulu": time_zulu,
+                "time_zulu_dashed": time_zulu_dashed,
+                "title": clean_series_title,
+                "ai_slug": clean_series_slug,
+                "original": sanitize_filename(orig_path.stem),
+                "folder": sanitize_filename(orig_path.parent.name if orig_path.parent else ""),
+                "enum": enum_str,
+                "enumeration": enum_str,
+                "part": str(item_index).zfill(pad_digits),
+                "total": str(total_count)
+            })
+            try:
+                stem = rename_template.format_map(subs)
+                if "{enum}" not in rename_template and "{enumeration}" not in rename_template and "{part}" not in rename_template:
+                    stem = f"{stem}{enum_str}"
+            except Exception:
+                stem = f"{date_compact}_{clean_series_title}{enum_str}"
+        else:
+            stem = f"{date_compact}_{time_zulu}_{clean_series_title}{enum_str}"
+
+        stem = sanitize_filename(stem)
+        desired_filename = f"{stem}{ext}"
+
+        # Resolve conflict-free target tracking with reserved_paths
+        target_path, sidecar_renames = resolve_unique_rename_target(
+            orig_path,
+            desired_filename,
+            reserved_paths=reserved_paths
+        )
+
+        plan.append({
+            "index": item_index,
+            "original_path": str(orig_path),
+            "original_filename": orig_path.name,
+            "target_filename": target_path.name,
+            "target_path": str(target_path),
+            "desired_filename": desired_filename,
+            "enum_str": enum_str,
+            "part_number": item_index,
+            "total_count": total_count,
+            "title_with_part": f"{clean_series_title.replace('_', ' ')} (Part {item_index})",
+            "sidecars_found": [str(c.name) for c, _ in sidecar_renames],
+            "sidecar_renames": [{"from": str(c), "to": str(n)} for c, n in sidecar_renames],
+            "recorded_datetime": dt_local.isoformat(),
+            "has_conflict": (target_path.name != desired_filename),
+            "conflict_detected": (target_path.name != desired_filename)
+        })
+
+    return plan
+

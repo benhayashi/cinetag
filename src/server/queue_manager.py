@@ -110,6 +110,34 @@ class QueueManager:
             self.log(f"Added {len(added)} files to queue (conflict mode: {conflict_mode}).")
             return added
 
+    def add_completed_task(
+        self,
+        file_path: str,
+        result: Optional[Dict[str, Any]] = None,
+        date_override: Optional[str] = None,
+        date_source: Optional[str] = None
+    ) -> TaskItem:
+        """Inject or reload a previously processed video directly into the completed queue."""
+        with self._lock:
+            p = Path(file_path)
+            resolved_str = str(p.resolve())
+            # Replace existing task if present
+            self.queue = [t for t in self.queue if t.file_path != resolved_str]
+            task = TaskItem(
+                file_path=resolved_str,
+                filename=p.name,
+                status="completed",
+                stage="Completed",
+                progress=100,
+                completed_at=datetime.now().isoformat(),
+                result=result or {},
+                date_override=date_override,
+                date_source=date_source
+            )
+            self.queue.append(task)
+            self.log(f"Loaded processed video '{task.filename}' into queue as completed.", task_id=task.id)
+            return task
+
     def start(self):
         with self._lock:
             self.is_running = True

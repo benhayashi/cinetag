@@ -3,6 +3,10 @@
 let scannedVideos = [];
 let renamePreviews = [];
 let pollInterval = null;
+let lastQueueTasks = [];
+const selectedCompletedTasks = new Set();
+let seriesModalItems = [];
+let seriesPreviewDebounce = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
@@ -20,6 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initFsBrowser();
   initConflictModal();
   initManualRenameModal();
+  initSeriesRenameModal();
   
   // Initial config load & backend status
   loadConfig();
@@ -568,20 +573,50 @@ function showToast(message, type = "info") {
 
 // --- Active Processing Queue Table ---
 function renderQueueTable(tasks, currentTask) {
+  lastQueueTasks = tasks || [];
   const tbody = document.getElementById("queue-tbody");
   const countEl = document.getElementById("queue-count");
   if (!tbody) return;
 
   if (countEl) countEl.textContent = tasks ? tasks.length : 0;
 
+  const completedTasks = tasks ? tasks.filter(t => t.status === "completed") : [];
+  const completedTaskIds = new Set(completedTasks.map(t => t.id));
+  for (const id of Array.from(selectedCompletedTasks)) {
+    if (!completedTaskIds.has(id)) {
+      selectedCompletedTasks.delete(id);
+    }
+  }
+
+  // Update Series Toolbar
+  const seriesToolbar = document.getElementById("queue-series-toolbar");
+  const seriesCountEl = document.getElementById("series-selected-count");
+  if (seriesToolbar) {
+    if (selectedCompletedTasks.size > 0) {
+      seriesToolbar.classList.remove("hidden");
+      if (seriesCountEl) seriesCountEl.textContent = selectedCompletedTasks.size;
+    } else {
+      seriesToolbar.classList.add("hidden");
+    }
+  }
+
+  // Update Master Checkbox in Queue Header
+  const masterCheck = document.getElementById("queue-select-all-completed");
+  if (masterCheck) {
+    masterCheck.checked = completedTasks.length > 0 && selectedCompletedTasks.size === completedTasks.length;
+    masterCheck.indeterminate = selectedCompletedTasks.size > 0 && selectedCompletedTasks.size < completedTasks.length;
+  }
+
   if (!tasks || tasks.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No videos in processing queue. Add files above or select clips to begin.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No videos in processing queue. Add files above or select clips to begin.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = tasks.map((t, idx) => {
     const isProcessing = t.status === "processing" || (currentTask && currentTask.id === t.id && t.status !== "completed" && t.status !== "failed");
     const rowClass = isProcessing ? 'class="queue-row-active"' : '';
+    const isCompleted = t.status === "completed";
+    const isChecked = selectedCompletedTasks.has(t.id);
     
     // Extract source folder name and directory path
     let folderName = "";
@@ -639,8 +674,13 @@ function renderQueueTable(tasks, currentTask) {
       `;
     }
 
+    const chkHtml = isCompleted
+      ? `<input type="checkbox" class="queue-task-chk" data-task-id="${t.id}" ${isChecked ? 'checked' : ''} onchange="toggleQueueTaskSelection('${t.id}', this.checked)">`
+      : ``;
+
     return `
       <tr ${rowClass}>
+        <td style="text-align:center;">${chkHtml}</td>
         <td style="font-weight:600; color:${isProcessing ? '#38bdf8' : 'var(--text-muted)'}; font-size:0.85rem;">
           ${isProcessing ? '▶' : (idx + 1)}
         </td>
@@ -662,6 +702,37 @@ function renderQueueTable(tasks, currentTask) {
       </tr>
     `;
   }).join("");
+}
+
+window.toggleQueueTaskSelection = function(taskId, isChecked) {
+  if (isChecked) {
+    selectedCompletedTasks.add(taskId);
+  } else {
+    selectedCompletedTasks.delete(taskId);
+  }
+  updateQueueSelectionUI();
+};
+
+function updateQueueSelectionUI() {
+  const completedTasks = lastQueueTasks.filter(t => t.status === "completed");
+  const seriesToolbar = document.getElementById("queue-series-toolbar");
+  const seriesCountEl = document.getElementById("series-selected-count");
+  if (seriesToolbar) {
+    if (selectedCompletedTasks.size > 0) {
+      seriesToolbar.classList.remove("hidden");
+      if (seriesCountEl) seriesCountEl.textContent = selectedCompletedTasks.size;
+    } else {
+      seriesToolbar.classList.add("hidden");
+    }
+  }
+  const selectAllChk = document.getElementById("queue-select-all-completed");
+  if (selectAllChk) {
+    selectAllChk.checked = completedTasks.length > 0 && selectedCompletedTasks.size === completedTasks.length;
+    selectAllChk.indeterminate = selectedCompletedTasks.size > 0 && selectedCompletedTasks.size < completedTasks.length;
+  }
+  document.querySelectorAll(".queue-task-chk").forEach(chk => {
+    chk.checked = selectedCompletedTasks.has(chk.dataset.taskId);
+  });
 }
 
 window.removeQueueItem = async function(taskId) {
@@ -1283,6 +1354,64 @@ function initQueueControls() {
       } else {
         openFsBrowser("files");
       }
+    });
+  }
+
+  // Master queue select all completed
+  const masterQueueChk = document.getElementById("queue-select-all-completed");
+  if (masterQueueChk) {
+    masterQueueChk.addEventListener("change", (e) => {
+      const completed = lastQueueTasks.filter(t => t.status === "completed");
+      if (e.target.checked) {
+        completed.forEach(t => selectedCompletedTasks.add(t.id));
+      } else {
+        selectedCompletedTasks.clear();
+      }
+      updateQueueSelectionUI();
+    });
+  }
+
+  // Clear series selection button
+  const btnClearSeries = document.getElementById("btn-clear-series-selection");
+  if (btnClearSeries) {
+    btnClearSeries.addEventListener("click", () => {
+      selectedCompletedTasks.clear();
+      updateQueueSelectionUI();
+    });
+  }
+
+  // Open series renamer modal
+  const btnOpenSeries = document.getElementById("btn-open-series-rename");
+  if (btnOpenSeries) {
+    btnOpenSeries.addEventListener("click", () => {
+      const selected = lastQueueTasks.filter(t => selectedCompletedTasks.has(t.id));
+      if (!selected.length) {
+        alert("Please select at least one completed video clip to enumerate.");
+        return;
+      }
+      openSeriesRenameModal(selected);
+    });
+  }
+
+  // Load processed videos button
+  const btnLoadProcessed = document.getElementById("btn-queue-load-processed");
+  if (btnLoadProcessed) {
+    btnLoadProcessed.addEventListener("click", () => {
+      openFsBrowser("load_processed");
+    });
+  }
+
+  // Hidden file input for load processed
+  const inputLoadProcessed = document.getElementById("input-load-processed");
+  if (inputLoadProcessed) {
+    inputLoadProcessed.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      const paths = files.map(f => f.path || f.name).filter(Boolean);
+      if (paths.length) {
+        await loadProcessedVideosFromPaths(paths);
+      }
+      e.target.value = "";
     });
   }
 
@@ -4365,6 +4494,11 @@ function initFsBrowser() {
               const btnScan = document.getElementById("btn-scan");
               if (btnScan) btnScan.click();
               return;
+            } else if (fsBrowserMode === "load_processed") {
+              closeFsBrowser();
+              const p = data.path ? [data.path] : (data.paths || []);
+              if (p.length) await loadProcessedVideosFromPaths(p);
+              return;
             } else if (fsBrowserMode === "files" && data.paths && data.paths.length > 0) {
               closeFsBrowser();
               await requestEnqueueWithConflictCheck(data.paths, false);
@@ -4428,6 +4562,14 @@ function initFsBrowser() {
         // Automatically trigger scan
         const btnScan = document.getElementById("btn-scan");
         if (btnScan) btnScan.click();
+      } else if (fsBrowserMode === "load_processed") {
+        const paths = fsSelectedFiles.size > 0 ? Array.from(fsSelectedFiles) : [fsCurrentPath];
+        if (!paths.length || !paths[0]) {
+          alert("Please select a folder or video files to load.");
+          return;
+        }
+        closeFsBrowser();
+        await loadProcessedVideosFromPaths(paths);
       } else {
         // Files mode: collect selected files
         const selected = Array.from(fsSelectedFiles);
@@ -4457,6 +4599,12 @@ async function openFsBrowser(mode = "folder") {
     confirmBtn.textContent = "Select This Folder";
     confirmBtn.className = "btn btn-primary";
     if (multiCtrl) multiCtrl.classList.add("hidden");
+  } else if (mode === "load_processed") {
+    titleEl.textContent = "📂 Load Previously Processed Footage";
+    subEl.textContent = "Select a folder or specific videos on host to load analysis and sidecars";
+    confirmBtn.textContent = "Load Selected Footage";
+    confirmBtn.className = "btn btn-primary";
+    if (multiCtrl) multiCtrl.classList.remove("hidden");
   } else {
     titleEl.textContent = "🎬 Select Video Files on Host";
     subEl.textContent = "Navigate and check specific video files to add to the processing queue";
@@ -4592,7 +4740,7 @@ function renderFsItems(filterText) {
     const isChecked = fsSelectedFiles.has(file.path);
     const safePath = escapeHtml(file.path).replace(/'/g, "\\'");
 
-    if (fsBrowserMode === "files") {
+    if (fsBrowserMode === "files" || fsBrowserMode === "load_processed") {
       html += `
         <div class="fs-item ${isChecked ? "selected" : ""}" onclick="toggleFsFileSelection('${safePath}')">
           <div class="fs-item-name">
@@ -4636,8 +4784,43 @@ function updateFsSelectionSummary() {
   if (!summaryEl) return;
   if (fsBrowserMode === "folder") {
     summaryEl.textContent = `Current Folder: ${fsCurrentPath}`;
+  } else if (fsBrowserMode === "load_processed") {
+    summaryEl.textContent = fsSelectedFiles.size > 0
+      ? `${fsSelectedFiles.size} video(s) selected (or click button to load entire folder)`
+      : `Current Folder: ${fsCurrentPath} (will load all videos in folder)`;
   } else {
     summaryEl.textContent = `${fsSelectedFiles.size} of ${fsCachedFiles.length} video(s) selected`;
+  }
+}
+
+async function loadProcessedVideosFromPaths(paths) {
+  showToast("Scanning for processed videos and sidecars...", "info");
+  try {
+    const res = await fetch("/api/queue/load_processed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_paths: paths })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to load processed videos");
+    }
+    const data = await res.json();
+    const count = data.loaded_count || 0;
+    if (count > 0) {
+      showToast(`🎉 Loaded ${count} processed video(s) into queue`, "success");
+      // Auto-select the newly loaded tasks so they are immediately selected for series rename
+      (data.tasks || []).forEach(t => {
+        if (t.task_id) selectedCompletedTasks.add(t.task_id);
+      });
+      await pollStatus();
+      updateQueueSelectionUI();
+    } else {
+      showToast("No video files found in selected location", "warning");
+    }
+  } catch (e) {
+    console.error("Load processed error:", e);
+    alert("Error loading processed videos: " + e.message);
   }
 }
 
@@ -4906,5 +5089,387 @@ async function confirmRenameAction() {
     }
   }
 }
+
+// --- Series Renaming & Sequential Enumeration Modal ---
+
+function initSeriesRenameModal() {
+  const modal = document.getElementById("modal-series-rename");
+  const btnClose = document.getElementById("btn-close-series-modal");
+  const btnCancel = document.getElementById("btn-cancel-series-modal");
+  const btnConfirm = document.getElementById("btn-confirm-series-modal");
+  const titleInput = document.getElementById("series-title-input");
+  const schemeSelect = document.getElementById("series-scheme-select");
+  const enumSelect = document.getElementById("series-enum-style-select");
+  const dateStratSelect = document.getElementById("series-date-strategy-select");
+  const startIdxInput = document.getElementById("series-start-index");
+  const padDigitsInput = document.getElementById("series-pad-digits");
+
+  const btnSortDateAsc = document.getElementById("btn-series-sort-date-asc");
+  const btnSortDateDesc = document.getElementById("btn-series-sort-date-desc");
+  const btnSortName = document.getElementById("btn-series-sort-name");
+
+  const closeModal = () => {
+    if (modal) modal.classList.add("hidden");
+    seriesModalItems = [];
+  };
+
+  if (btnClose) btnClose.addEventListener("click", closeModal);
+  if (btnCancel) btnCancel.addEventListener("click", closeModal);
+
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modal && !modal.classList.contains("hidden")) {
+      closeModal();
+    }
+  });
+
+  if (titleInput) {
+    titleInput.addEventListener("input", triggerSeriesPreview);
+  }
+
+  [schemeSelect, enumSelect, dateStratSelect, startIdxInput, padDigitsInput].forEach(el => {
+    if (el) {
+      el.addEventListener("change", triggerSeriesPreview);
+      if (el.tagName === "INPUT") {
+        el.addEventListener("input", triggerSeriesPreview);
+      }
+    }
+  });
+
+  if (btnSortDateAsc) btnSortDateAsc.addEventListener("click", () => sortSeriesItems("date-asc"));
+  if (btnSortDateDesc) btnSortDateDesc.addEventListener("click", () => sortSeriesItems("date-desc"));
+  if (btnSortName) btnSortName.addEventListener("click", () => sortSeriesItems("name"));
+
+  if (btnConfirm) {
+    btnConfirm.addEventListener("click", confirmSeriesRename);
+  }
+}
+
+window.openSeriesRenameModal = function(tasks) {
+  const modal = document.getElementById("modal-series-rename");
+  if (!modal || !tasks || !tasks.length) return;
+
+  seriesModalItems = tasks.map(t => {
+    const res = t.result || {};
+    return {
+      taskId: t.id,
+      filePath: res.final_file_path || t.file_path,
+      filename: t.filename || (t.file_path ? t.file_path.replace(/\\/g, "/").split("/").pop() : ""),
+      title: res.title || "",
+      suggestedSlug: res.suggested_filename || "",
+      creationDate: t.creation_date || null,
+      dateOverride: t.date_override || null,
+      originalFilename: t.original_filename || t.filename,
+      sidecars: res.sidecars || []
+    };
+  });
+
+  // Default sort: chronologically by date/filename ascending
+  sortSeriesItems("date-asc", false);
+
+  // Suggest initial series title:
+  const firstTitle = seriesModalItems[0]?.title || seriesModalItems[0]?.suggestedSlug || "";
+  let suggestedSeries = firstTitle
+    .replace(/\s*\(?(?:part|pt|episode|ep)?\s*\d+\)?$/i, "")
+    .replace(/[_-]+(?:pt|part)?\d+$/i, "")
+    .trim();
+  if (!suggestedSeries) suggestedSeries = "Series Clip";
+
+  const titleInput = document.getElementById("series-title-input");
+  if (titleInput) {
+    titleInput.value = suggestedSeries;
+  }
+
+  // Reset defaults
+  const schemeSelect = document.getElementById("series-scheme-select");
+  if (schemeSelect) schemeSelect.value = "datetime_title_enum";
+
+  const enumSelect = document.getElementById("series-enum-style-select");
+  if (enumSelect) enumSelect.value = "pt";
+
+  const dateStratSelect = document.getElementById("series-date-strategy-select");
+  if (dateStratSelect) dateStratSelect.value = "individual";
+
+  const startIdxInput = document.getElementById("series-start-index");
+  if (startIdxInput) startIdxInput.value = "1";
+
+  const padDigitsInput = document.getElementById("series-pad-digits");
+  if (padDigitsInput) padDigitsInput.value = "2";
+
+  const optSidecars = document.getElementById("series-opt-sidecars");
+  if (optSidecars) optSidecars.checked = true;
+
+  const optMeta = document.getElementById("series-opt-metadata");
+  if (optMeta) optMeta.checked = true;
+
+  renderSeriesItemsList();
+  modal.classList.remove("hidden");
+  if (titleInput) {
+    titleInput.focus();
+    titleInput.select();
+  }
+  triggerSeriesPreview();
+};
+
+function sortSeriesItems(type, triggerPreview = true) {
+  if (type === "date-asc") {
+    seriesModalItems.sort((a, b) => {
+      const da = a.creationDate || a.filename;
+      const db = b.creationDate || b.filename;
+      return da.localeCompare(db);
+    });
+  } else if (type === "date-desc") {
+    seriesModalItems.sort((a, b) => {
+      const da = a.creationDate || a.filename;
+      const db = b.creationDate || b.filename;
+      return db.localeCompare(da);
+    });
+  } else if (type === "name") {
+    seriesModalItems.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
+  }
+  renderSeriesItemsList();
+  if (triggerPreview) triggerSeriesPreview();
+}
+
+function renderSeriesItemsList() {
+  const container = document.getElementById("series-items-list");
+  const countEl = document.getElementById("series-items-count");
+  if (countEl) countEl.textContent = seriesModalItems.length;
+  if (!container) return;
+
+  if (seriesModalItems.length === 0) {
+    container.innerHTML = `<div class="text-muted" style="font-size:0.8rem; text-align:center; padding:1rem;">No clips in series.</div>`;
+    return;
+  }
+
+  container.innerHTML = seriesModalItems.map((item, idx) => {
+    const isFirst = idx === 0;
+    const isLast = idx === seriesModalItems.length - 1;
+    return `
+      <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(30,41,59,0.5); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.4rem 0.65rem; gap:0.5rem;">
+        <div style="display:flex; align-items:center; gap:0.6rem; min-width:0; flex:1;">
+          <span class="badge-tag" style="background:#3b82f6; color:#fff; font-size:0.75rem; min-width:24px; text-align:center;">#${idx + 1}</span>
+          <div style="min-width:0; overflow:hidden;">
+            <div style="font-size:0.85rem; font-weight:600; color:var(--text-main); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
+              ${escapeHtml(item.filename)}
+            </div>
+            <div style="font-size:0.75rem; color:#94a3b8; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
+              ${item.title ? `Title: <em>${escapeHtml(item.title)}</em>` : (item.creationDate ? `Date: ${escapeHtml(item.creationDate)}` : "")}
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.25rem;">
+          <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="moveSeriesItem(${idx}, ${idx - 1})" ${isFirst ? 'disabled style="opacity:0.3; cursor:default;"' : ''} title="Move Earlier in Series">⬆️</button>
+          <button class="btn btn-sm btn-secondary" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="moveSeriesItem(${idx}, ${idx + 1})" ${isLast ? 'disabled style="opacity:0.3; cursor:default;"' : ''} title="Move Later in Series">⬇️</button>
+          <button class="btn btn-sm btn-danger-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="removeSeriesItem(${idx})" title="Exclude Clip from Series">✕</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+window.moveSeriesItem = function(fromIdx, toIdx) {
+  if (fromIdx < 0 || fromIdx >= seriesModalItems.length || toIdx < 0 || toIdx >= seriesModalItems.length) return;
+  const item = seriesModalItems.splice(fromIdx, 1)[0];
+  seriesModalItems.splice(toIdx, 0, item);
+  renderSeriesItemsList();
+  triggerSeriesPreview();
+};
+
+window.removeSeriesItem = function(idx) {
+  if (idx < 0 || idx >= seriesModalItems.length) return;
+  seriesModalItems.splice(idx, 1);
+  renderSeriesItemsList();
+  triggerSeriesPreview();
+};
+
+function triggerSeriesPreview() {
+  if (seriesPreviewDebounce) clearTimeout(seriesPreviewDebounce);
+  seriesPreviewDebounce = setTimeout(updateSeriesPreview, 120);
+}
+
+async function updateSeriesPreview() {
+  const spinnerEl = document.getElementById("series-preview-spinner");
+  const tbody = document.getElementById("series-preview-tbody");
+  if (!tbody) return;
+
+  if (seriesModalItems.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No clips selected</td></tr>`;
+    return;
+  }
+
+  const titleInput = document.getElementById("series-title-input");
+  const seriesTitle = titleInput ? titleInput.value.trim() : "";
+  const scheme = document.getElementById("series-scheme-select")?.value || "datetime_title_enum";
+  const enumStyle = document.getElementById("series-enum-style-select")?.value || "pt";
+  const dateStrategy = document.getElementById("series-date-strategy-select")?.value || "individual";
+  const startIndex = parseInt(document.getElementById("series-start-index")?.value, 10) || 1;
+  const padDigits = parseInt(document.getElementById("series-pad-digits")?.value, 10) || 2;
+
+  if (spinnerEl) spinnerEl.classList.remove("hidden");
+
+  try {
+    const itemsPayload = seriesModalItems.map(it => ({
+      file_path: it.filePath,
+      creation_date: it.creationDate,
+      date_override: it.dateOverride,
+      original_filename: it.originalFilename || it.filename,
+      title: it.title,
+      suggested_slug: it.suggestedSlug,
+      task_id: it.taskId
+    }));
+
+    const res = await fetch("/api/rename/series/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: itemsPayload,
+        series_title: seriesTitle,
+        scheme: scheme,
+        enum_style: enumStyle,
+        pad_digits: padDigits,
+        start_index: startIndex,
+        time_strategy: dateStrategy
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state error-text">Preview error: ${escapeHtml(err.detail || "Error")}</td></tr>`;
+      return;
+    }
+
+    const data = await res.json();
+    const plan = data.plan || [];
+
+    if (!plan.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No items in rename plan</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = plan.map((p, idx) => {
+      const conflictBadge = p.conflict_detected 
+        ? `<span class="badge-tag danger" style="font-size:0.7rem; padding:1px 4px; margin-left:4px;" title="Target collision resolved automatically">Conflict Adjusted</span>` 
+        : "";
+      const sidecarsCount = (p.sidecars || []).length;
+      return `
+        <tr>
+          <td style="font-weight:600; color:#94a3b8; font-size:0.8rem;">${idx + 1}</td>
+          <td style="font-size:0.8rem; word-break:break-all; color:#cbd5e1;">${escapeHtml(p.original_filename)}</td>
+          <td style="font-size:0.8rem; word-break:break-all; font-weight:600; color:#38bdf8;">
+            ${escapeHtml(p.target_filename)}
+            ${conflictBadge}
+          </td>
+          <td style="font-size:0.8rem; color:#34d399;">${escapeHtml(p.title_with_part || "")}</td>
+          <td>
+            <span class="badge-tag" style="background:rgba(59,130,246,0.15); color:#93c5fd; font-size:0.75rem;">
+              ${sidecarsCount} file${sidecarsCount === 1 ? '' : 's'}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+  } catch (e) {
+    console.warn("Series preview failed:", e);
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state error-text">Preview failed: ${escapeHtml(e.message)}</td></tr>`;
+  } finally {
+    if (spinnerEl) spinnerEl.classList.add("hidden");
+  }
+}
+
+async function confirmSeriesRename() {
+  if (!seriesModalItems || !seriesModalItems.length) {
+    alert("No clips selected for series renaming.");
+    return;
+  }
+
+  const titleInput = document.getElementById("series-title-input");
+  const seriesTitle = titleInput ? titleInput.value.trim() : "";
+  if (!seriesTitle) {
+    alert("Please enter a Series Title or Common Slug.");
+    if (titleInput) titleInput.focus();
+    return;
+  }
+
+  const scheme = document.getElementById("series-scheme-select")?.value || "datetime_title_enum";
+  const enumStyle = document.getElementById("series-enum-style-select")?.value || "pt";
+  const dateStrategy = document.getElementById("series-date-strategy-select")?.value || "individual";
+  const startIndex = parseInt(document.getElementById("series-start-index")?.value, 10) || 1;
+  const padDigits = parseInt(document.getElementById("series-pad-digits")?.value, 10) || 2;
+  const renameSidecars = document.getElementById("series-opt-sidecars")?.checked ?? true;
+  const updateMetadata = document.getElementById("series-opt-metadata")?.checked ?? true;
+
+  const btnConfirm = document.getElementById("btn-confirm-series-modal");
+  const origText = btnConfirm ? btnConfirm.textContent : "🚀 Execute Series Rename";
+  if (btnConfirm) {
+    btnConfirm.disabled = true;
+    btnConfirm.textContent = "⏳ Renaming Series...";
+  }
+
+  try {
+    const itemsPayload = seriesModalItems.map(it => ({
+      file_path: it.filePath,
+      creation_date: it.creationDate,
+      date_override: it.dateOverride,
+      original_filename: it.originalFilename || it.filename,
+      title: it.title,
+      suggested_slug: it.suggestedSlug,
+      task_id: it.taskId
+    }));
+
+    const res = await fetch("/api/rename/series/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: itemsPayload,
+        series_title: seriesTitle,
+        scheme: scheme,
+        enum_style: enumStyle,
+        pad_digits: padDigits,
+        start_index: startIndex,
+        time_strategy: dateStrategy,
+        rename_sidecars: renameSidecars,
+        update_metadata: updateMetadata
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Series rename failed");
+    }
+
+    const data = await res.json();
+    const count = data.renamed_count || 0;
+
+    // Close modal
+    const modal = document.getElementById("modal-series-rename");
+    if (modal) modal.classList.add("hidden");
+
+    // Clear selection
+    selectedCompletedTasks.clear();
+
+    showToast(`🎉 Successfully renamed ${count} clip(s) and sidecars in series!`, "success");
+
+    // Refresh queue & scanned table
+    await pollStatus();
+    updateQueueSelectionUI();
+
+  } catch (err) {
+    console.error("Series rename execute failed:", err);
+    alert("Error executing series rename: " + err.message);
+  } finally {
+    if (btnConfirm) {
+      btnConfirm.disabled = false;
+      btnConfirm.textContent = origText;
+    }
+  }
+}
+
 
 

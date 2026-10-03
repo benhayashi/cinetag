@@ -106,6 +106,43 @@ class SingleRenameRequest(BaseModel):
     template: Optional[str] = None
     task_id: Optional[str] = None
 
+class LoadProcessedRequest(BaseModel):
+    file_paths: List[str]
+
+class SeriesItemRequest(BaseModel):
+    file_path: str
+    creation_date: Optional[str] = None
+    date_override: Optional[str] = None
+    original_filename: Optional[str] = None
+    title: Optional[str] = None
+    suggested_slug: Optional[str] = None
+    task_id: Optional[str] = None
+
+class SeriesRenamePreviewRequest(BaseModel):
+    items: List[SeriesItemRequest]
+    series_title: str
+    scheme: str = "datetime_title_enum"
+    enum_style: str = "pt"
+    pad_digits: int = 2
+    start_index: int = 1
+    time_strategy: str = "individual"
+    template: Optional[str] = None
+    date_source: Optional[str] = "smart"
+    date_order: Optional[str] = "auto"
+
+class SeriesRenameExecuteRequest(BaseModel):
+    items: List[SeriesItemRequest]
+    series_title: str
+    scheme: str = "datetime_title_enum"
+    enum_style: str = "pt"
+    pad_digits: int = 2
+    start_index: int = 1
+    time_strategy: str = "individual"
+    template: Optional[str] = None
+    rename_sidecars: bool = True
+    update_metadata: bool = True
+    date_source: Optional[str] = "smart"
+    date_order: Optional[str] = "auto"
 
 class TagRequest(BaseModel):
     video_path: str
@@ -216,6 +253,102 @@ def add_to_queue(req: AddQueueRequest):
         filename_date_order=req.filename_date_order
     )
     return {"status": "ok", "added_count": len(added)}
+
+@router.post("/queue/load_processed")
+def load_processed_videos(req: LoadProcessedRequest):
+    """
+    Scan provided video files, read any existing sidecars (.info.json, .srt, .txt, .nfo, .xmp),
+    and load them into the queue as completed tasks so they can be viewed or selected for series renaming.
+    """
+    VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".flv"}
+    loaded_tasks = []
+
+    for path_str in req.file_paths:
+        p = Path(path_str)
+        if not p.exists():
+            continue
+
+        if p.is_dir():
+            candidates = sorted([f for f in p.iterdir() if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS])
+        else:
+            candidates = [p] if p.suffix.lower() in VIDEO_EXTENSIONS else []
+
+        for vp in candidates:
+            parent = vp.parent
+            stem = vp.stem
+            name = vp.name
+
+            # Discover sidecars
+            json_candidates = [parent / f"{stem}.info.json", parent / f"{name}.info.json"]
+            json_p = next((f for f in json_candidates if f.exists()), None)
+
+            # Discover any other sidecars belonging to this video
+            written_sidecars = []
+            if parent.exists():
+                for sc in parent.iterdir():
+                    if sc.is_file() and sc != vp and (sc.name.startswith(name) or sc.name.startswith(f"{stem}.")):
+                        if sc.suffix.lower() not in VIDEO_EXTENSIONS:
+                            written_sidecars.append(str(sc.resolve()))
+
+            title = stem.replace("_", " ")
+            summary = ""
+            events = []
+            tags = []
+            people = []
+            animals_or_pets = []
+            objects = []
+            suggested_filename = stem
+            audio_transcript = None
+
+            if json_p:
+                try:
+                    with open(json_p, "r", encoding="utf-8") as jf:
+                        jdata = json.load(jf)
+                        analysis = jdata.get("analysis", {})
+                        title = analysis.get("title") or title
+                        summary = analysis.get("summary") or summary
+                        events = analysis.get("events") or events
+                        tags = analysis.get("tags") or tags
+                        people = analysis.get("people_or_subjects") or people
+                        animals_or_pets = analysis.get("animals_or_pets") or animals_or_pets
+                        objects = analysis.get("objects") or objects
+                        suggested_filename = analysis.get("suggested_filename") or suggested_filename
+                        audio_transcript = analysis.get("audio_transcript")
+                except Exception as je:
+                    logger.warning(f"Error parsing {json_p}: {je}")
+
+            result = {
+                "title": title,
+                "summary": summary,
+                "events_count": len(events),
+                "tags": tags,
+                "people": people,
+                "animals_or_pets": animals_or_pets,
+                "objects": objects,
+                "suggested_filename": suggested_filename,
+                "final_file_path": str(vp.resolve()),
+                "audio_transcript": audio_transcript,
+                "sidecars": written_sidecars
+            }
+
+            task = manager.add_completed_task(
+                file_path=str(vp.resolve()),
+                result=result,
+                date_source="smart"
+            )
+            loaded_tasks.append({
+                "task_id": task.id,
+                "filename": task.filename,
+                "file_path": task.file_path,
+                "title": title,
+                "sidecars_count": len(written_sidecars)
+            })
+
+    return {
+        "status": "ok",
+        "loaded_count": len(loaded_tasks),
+        "tasks": loaded_tasks
+    }
 
 @router.get("/prompts/defaults")
 def get_prompt_defaults():
@@ -1433,6 +1566,90 @@ def execute_single_rename(req: SingleRenameRequest):
         )
 
     return res
+
+@router.post("/rename/series/preview")
+def preview_series_rename(req: SeriesRenamePreviewRequest):
+    from src.media.renamer import generate_series_rename_plan
+    cfg = load_config()
+
+    items_data = [item.model_dump() for item in req.items]
+    plan = generate_series_rename_plan(
+        items=items_data,
+        series_title=req.series_title,
+        scheme=req.scheme,
+        enum_style=req.enum_style,
+        pad_digits=req.pad_digits,
+        start_index=req.start_index,
+        time_strategy=req.time_strategy,
+        date_source=req.date_source or "smart",
+        date_order=req.date_order or getattr(cfg, "filename_date_order", "auto"),
+        rename_template=req.template or cfg.rename_template
+    )
+    return {
+        "status": "ok",
+        "total_items": len(plan),
+        "plan": plan
+    }
+
+@router.post("/rename/series/execute")
+def execute_series_rename_api(req: SeriesRenameExecuteRequest):
+    from src.media.renamer import generate_series_rename_plan, execute_rename
+    cfg = load_config()
+
+    items_data = [item.model_dump() for item in req.items]
+    plan = generate_series_rename_plan(
+        items=items_data,
+        series_title=req.series_title,
+        scheme=req.scheme,
+        enum_style=req.enum_style,
+        pad_digits=req.pad_digits,
+        start_index=req.start_index,
+        time_strategy=req.time_strategy,
+        date_source=req.date_source or "smart",
+        date_order=req.date_order or getattr(cfg, "filename_date_order", "auto"),
+        rename_template=req.template or cfg.rename_template
+    )
+
+    results = []
+    task_id_map = {item.file_path: item.task_id for item in req.items if item.task_id}
+
+    for plan_item in plan:
+        orig = Path(plan_item["original_path"])
+        if not orig.exists():
+            continue
+
+        target_name = plan_item["target_filename"]
+        title_with_part = plan_item["title_with_part"] if req.update_metadata else None
+
+        ren_res = execute_rename(
+            original_path=orig,
+            new_filename=target_name,
+            rename_sidecars=req.rename_sidecars,
+            new_title=title_with_part
+        )
+
+        if ren_res.get("status") == "success":
+            new_path = ren_res.get("renamed_to", str(orig))
+            ren_res["new_filename"] = Path(new_path).name
+            ren_res["new_title"] = title_with_part or plan_item["target_filename"]
+
+            # Update QueueManager records
+            tid = task_id_map.get(str(orig)) or task_id_map.get(str(orig.resolve()))
+            manager.update_task_rename(
+                old_path=str(orig),
+                new_path=new_path,
+                new_title=title_with_part,
+                sidecars_moved=ren_res.get("sidecars_renamed", []),
+                task_id=tid
+            )
+
+        results.append(ren_res)
+
+    return {
+        "status": "ok",
+        "renamed_count": len([r for r in results if r.get("status") == "success"]),
+        "results": results
+    }
 
 @router.post("/rename/undo")
 def undo_rename():
