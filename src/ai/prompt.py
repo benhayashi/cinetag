@@ -21,7 +21,9 @@ You must respond in valid JSON with the following structure:
   "people_or_subjects": ["Young boy", "Teenage girl"],
   "animals_or_pets": ["Golden Retriever", "Border Collie"],
   "objects": ["tennis racket", "tennis ball", "sports visor", "lawn chair"],
-  "suggested_filename": "kids_playing_tennis_backyard"
+  "suggested_filename": "kids_playing_tennis_backyard",
+  "detected_date_in_context": "YYYY-MM-DD, YYYY-MM, or YYYY if a calendar, on-screen timestamp, newspaper, banner, or spoken date is present; otherwise null",
+  "detected_date_evidence": "Short explanation of the date evidence (e.g. Wall calendar shows October 2014, or Camcorder overlay in corner shows 05/12/1998); otherwise null"
 }
 
 Important Rules:
@@ -35,6 +37,7 @@ Important Rules:
 8. Title Quality: Keep titles complete, descriptive, and concise (3-6 words). Ensure the title is a finished thought and NEVER ends abruptly or in the middle of a word.
 9. Output ONLY the raw JSON object, without introductory text or markdown formatting if possible.
 10. Filename Clues & Historical Metadata: When original filename context clues (such as people's names, event titles, locations, or dates) are provided, verify them against visual and audible cues. If consistent with the footage, incorporate them into "people_or_subjects", the "title", the "summary", "tags", and "suggested_filename".
+11. Date & Time Clues in Video Context: Look closely for any visible or audible date/time information in the footage (e.g. wall or desk calendar with visible month/year/day, camcorder timestamp overlay in corner, newspaper date, event banners like 'Class of 2012' or '50th Anniversary 1998', birthday cakes, holiday decorations, or spoken dates in speech). If detected, report 'detected_date_in_context' (format as YYYY-MM-DD, YYYY-MM, or YYYY) and 'detected_date_evidence' (e.g. 'Wall calendar shows October 2014'). If no date information is detected in context, set both to null.
 """
 DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
 
@@ -127,6 +130,9 @@ def parse_ai_response(raw_text: str, default_title: str = "Home Video") -> Video
             if item and item.lower() not in [t.lower() for t in tags]:
                 tags.append(item.lower())
 
+        detected_date_in_ctx = data.get("detected_date_in_context") or data.get("detected_date") or None
+        detected_date_evid = data.get("detected_date_evidence") or data.get("date_evidence") or None
+
         return VideoAnalysisResult(
             title=data.get("title", default_title),
             summary=data.get("summary", clean_text[:300]),
@@ -136,6 +142,8 @@ def parse_ai_response(raw_text: str, default_title: str = "Home Video") -> Video
             animals_or_pets=animals,
             objects=objects,
             suggested_filename=data.get("suggested_filename", ""),
+            detected_date_in_context=str(detected_date_in_ctx).strip() if detected_date_in_ctx else None,
+            detected_date_evidence=str(detected_date_evid).strip() if detected_date_evid else None,
             raw_response=raw_text
         )
     except Exception:
@@ -169,3 +177,5 @@ def parse_ai_response(raw_text: str, default_title: str = "Home Video") -> Video
             suggested_filename="",
             raw_response=raw_text
         )
+
+parse_analysis_response = parse_ai_response

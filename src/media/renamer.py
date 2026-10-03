@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -853,6 +854,131 @@ def undo_last_rename() -> Optional[Dict[str, Any]]:
     return {
         "reverted_from": str(to_path),
         "restored_to": str(from_path)
+    }
+
+def update_file_date_and_metadata(
+    video_path: Path,
+    new_date: str,
+    update_mtime: bool = True,
+    rename_to_new_date: bool = False,
+    template: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Updates the recorded creation date in video sidecars (.info.json, .nfo, .txt),
+    optionally synchronizes the filesystem modified time (mtime via os.utime),
+    and optionally renames the video and sidecars according to the new date.
+    """
+    if not video_path.exists():
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+
+    # Parse new_date
+    dt_local, dt_utc, _ = resolve_datetime(original_path=video_path, date_override=new_date)
+    iso_date = dt_local.isoformat()
+    parent = video_path.parent
+    stem = video_path.stem
+    name = video_path.name
+
+    sidecars_updated = []
+
+    # 1. Update .info.json
+    json_candidates = [parent / f"{stem}.info.json", parent / f"{name}.info.json"]
+    for jc in json_candidates:
+        if jc.exists():
+            try:
+                with open(jc, "r", encoding="utf-8") as jf:
+                    jdata = json.load(jf)
+                if "file" not in jdata:
+                    jdata["file"] = {}
+                if "metadata" not in jdata["file"]:
+                    jdata["file"]["metadata"] = {}
+                jdata["file"]["metadata"]["creation_time"] = iso_date
+                jdata["file"]["metadata"]["date_source_used"] = "confirmed_update"
+                jdata.pop("pending_date_proposal", None)
+                if "analysis" in jdata and isinstance(jdata["analysis"], dict):
+                    if "detected_date_in_context" in jdata["analysis"]:
+                        jdata["analysis"]["detected_date_in_context"] = iso_date
+                with open(jc, "w", encoding="utf-8") as jf:
+                    json.dump(jdata, jf, indent=2, ensure_ascii=False)
+                sidecars_updated.append(str(jc))
+            except Exception as e:
+                logger.warning(f"Error updating {jc.name}: {e}")
+
+    # 2. Update .nfo
+    nfo_candidates = [parent / f"{stem}.nfo", parent / f"{name}.nfo"]
+    for nc in nfo_candidates:
+        if nc.exists():
+            try:
+                content = nc.read_text(encoding="utf-8")
+                date_str = dt_local.strftime("%Y-%m-%d")
+                year_str = dt_local.strftime("%Y")
+                if "<premiered>" in content:
+                    content = re.sub(r"<premiered>.*?</premiered>", f"<premiered>{date_str}</premiered>", content)
+                elif "<movie>" in content:
+                    content = content.replace("</movie>", f"  <premiered>{date_str}</premiered>\n  <year>{year_str}</year>\n</movie>")
+                if "<year>" in content:
+                    content = re.sub(r"<year>.*?</year>", f"<year>{year_str}</year>", content)
+                nc.write_text(content, encoding="utf-8")
+                sidecars_updated.append(str(nc))
+            except Exception as e:
+                logger.warning(f"Error updating {nc.name}: {e}")
+
+    # 3. Update filesystem mtime if requested
+    if update_mtime:
+        try:
+            epoch = dt_local.timestamp()
+            os.utime(video_path, (epoch, epoch))
+            # Also sync any sidecars
+            for sc_path_str in sidecars_updated:
+                sc_p = Path(sc_path_str)
+                if sc_p.exists():
+                    try:
+                        os.utime(sc_p, (epoch, epoch))
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning(f"Could not update mtime for {video_path.name}: {e}")
+
+    # 4. Optional rename to reflect new date
+    renamed_to = str(video_path)
+    if rename_to_new_date:
+        title = stem.replace("_", " ")
+        for jc in json_candidates:
+            if jc.exists():
+                try:
+                    with open(jc, "r", encoding="utf-8") as jf:
+                        title = json.load(jf).get("analysis", {}).get("title", title)
+                except Exception:
+                    pass
+
+        new_fn = generate_suggested_name(
+            original_path=video_path,
+            ai_title=title,
+            creation_date=iso_date,
+            template=template or "{date_compact}_{time_zulu}_{title}",
+            date_override=iso_date
+        )
+        if new_fn != video_path.name:
+            ren_res = execute_rename(
+                original_path=video_path,
+                new_filename=new_fn,
+                rename_sidecars=True,
+                new_creation_date=iso_date
+            )
+            if ren_res.get("status") == "success":
+                renamed_to = ren_res.get("renamed_to", str(video_path))
+                if update_mtime:
+                    try:
+                        epoch = dt_local.timestamp()
+                        os.utime(Path(renamed_to), (epoch, epoch))
+                    except Exception:
+                        pass
+
+    return {
+        "status": "success",
+        "original_path": str(video_path),
+        "final_path": renamed_to,
+        "new_date": iso_date,
+        "sidecars_updated": sidecars_updated
     }
 
 def format_enumeration(index: int, total: int, style: str = "pt", pad_digits: int = 2) -> str:

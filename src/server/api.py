@@ -166,6 +166,13 @@ class TestCompreFaceRequest(BaseModel):
     url: str
     api_key: str
 
+class DateConfirmUpdateRequest(BaseModel):
+    file_path: str
+    action: str  # "apply" or "dismiss"
+    new_date: Optional[str] = None
+    task_id: Optional[str] = None
+    rename_file: bool = False
+
 def format_size(size_bytes: int) -> str:
     for unit in ['B', 'KB', 'MB', 'GB']:
         if size_bytes < 1024.0:
@@ -1658,6 +1665,107 @@ def undo_rename():
         raise HTTPException(status_code=400, detail="No rename transaction to undo")
     return res
 
+@router.post("/date/confirm-update")
+def confirm_date_update(req: DateConfirmUpdateRequest):
+    """
+    Apply or dismiss a proposed detected date update for a video and its metadata/sidecars.
+    """
+    p = Path(req.file_path)
+    if not p.is_absolute() or not p.exists():
+        cand = get_uploads_dir() / p.name
+        if cand.exists():
+            p = cand
+
+    if not p.exists():
+        # Check queue match
+        task_match = next(
+            (t for t in manager.queue if t.file_path == str(p.resolve()) or (t.result and t.result.get("final_file_path") == str(p.resolve()))),
+            None
+        )
+        if task_match and task_match.result and task_match.result.get("final_file_path"):
+            cand = Path(task_match.result["final_file_path"])
+            if cand.exists():
+                p = cand
+
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {req.file_path}")
+
+    cfg = load_config()
+
+    if req.action == "dismiss":
+        # Clear proposal from sidecar and in-memory queue
+        json_p = p.parent / f"{p.stem}.info.json"
+        if not json_p.exists():
+            json_p = p.parent / f"{p.name}.info.json"
+        if json_p.exists():
+            try:
+                with open(json_p, "r", encoding="utf-8") as jf:
+                    data = json.load(jf)
+                if "pending_date_proposal" in data:
+                    data.pop("pending_date_proposal", None)
+                    with open(json_p, "w", encoding="utf-8") as jf:
+                        json.dump(data, jf, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"Failed to clear pending_date_proposal in {json_p}: {e}")
+
+        manager.dismiss_task_date_proposal(str(p.resolve()), task_id=req.task_id)
+        return {"status": "dismissed", "file_path": str(p.resolve()), "message": "Date proposal dismissed"}
+
+    elif req.action == "apply":
+        new_date = req.new_date
+        # If new_date not explicitly provided, find proposal from .info.json or queue
+        if not new_date:
+            json_p = p.parent / f"{p.stem}.info.json"
+            if not json_p.exists():
+                json_p = p.parent / f"{p.name}.info.json"
+            if json_p.exists():
+                try:
+                    with open(json_p, "r", encoding="utf-8") as jf:
+                        data = json.load(jf)
+                    proposal = data.get("pending_date_proposal")
+                    if proposal:
+                        new_date = proposal.get("proposed_datetime_iso") or proposal.get("proposed_date")
+                except Exception:
+                    pass
+
+        if not new_date:
+            task_match = next((t for t in manager.queue if t.file_path == str(p.resolve())), None)
+            if task_match and task_match.result:
+                prop = task_match.result.get("pending_date_proposal")
+                if prop:
+                    new_date = prop.get("proposed_datetime_iso") or prop.get("proposed_date")
+
+        if not new_date:
+            raise HTTPException(status_code=400, detail="No date specified or found in pending proposal")
+
+        from src.media.renamer import update_file_date_and_metadata
+        res = update_file_date_and_metadata(
+            video_path=p,
+            new_date=new_date,
+            update_mtime=getattr(cfg, "sync_file_mtime_with_date", True),
+            rename_to_new_date=req.rename_file,
+            template=cfg.rename_template
+        )
+
+        final_path = res.get("final_path", str(p.resolve()))
+        manager.update_task_date(
+            file_path=final_path,
+            new_date_iso=res.get("new_date", new_date),
+            task_id=req.task_id
+        )
+
+        # If file was also renamed as part of updating the date, update queue rename tracking too
+        if res.get("renamed") and res.get("final_path") != str(p.resolve()):
+            manager.update_task_rename(
+                old_path=str(p.resolve()),
+                new_path=res["final_path"],
+                task_id=req.task_id
+            )
+
+        return res
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {req.action}")
+
 @router.post("/tag/apply")
 def tag_file(req: TagRequest):
     p = Path(req.video_path)
@@ -2132,6 +2240,10 @@ def get_video_results(file_path: str):
     model = ""
     processed_at = None
     creation_time = None
+    pending_date_proposal = None
+    detected_date_in_context = None
+    detected_date_evidence = None
+    date_source_used = None
     jdata = {}
 
     # 1. Parse .info.json if available
@@ -2153,25 +2265,42 @@ def get_video_results(file_path: str):
                 model = analysis.get("model", "")
                 processed_at = analysis.get("processed_at")
                 creation_time = jdata.get("file", {}).get("metadata", {}).get("creation_time") or jdata.get("metadata", {}).get("creation_time")
+                pending_date_proposal = jdata.get("pending_date_proposal")
+                detected_date_in_context = analysis.get("detected_date_in_context")
+                detected_date_evidence = analysis.get("detected_date_evidence")
+                date_source_used = jdata.get("file", {}).get("metadata", {}).get("date_source_used") or jdata.get("metadata", {}).get("date_source_used")
         except Exception as e:
             logger.warning(f"Error reading JSON sidecar {json_p}: {e}")
 
     # 2. Fallback to active/recent queue task result
-    if not title or not summary:
-        task_match = next((t for t in manager.queue if t.file_path == str(p.resolve())), None)
-        if task_match and task_match.result:
-            title = title or task_match.result.get("title", "")
-            summary = summary or task_match.result.get("summary", "")
-            tags = tags or task_match.result.get("tags", [])
-            animals_or_pets = animals_or_pets or task_match.result.get("animals_or_pets", [])
-            objects = objects or task_match.result.get("objects", [])
-            people = people or task_match.result.get("people", [])
-            suggested_filename = suggested_filename or task_match.result.get("suggested_filename", "")
-
-    if not audio_transcript:
-        task_match = next((t for t in manager.queue if t.file_path == str(p.resolve())), None)
-        if task_match and task_match.result:
+    task_match = next((t for t in manager.queue if t.file_path == str(p.resolve()) or (t.result and t.result.get("final_file_path") == str(p.resolve()))), None)
+    if task_match and task_match.result:
+        if not title:
+            title = task_match.result.get("title", "")
+        if not summary:
+            summary = task_match.result.get("summary", "")
+        if not tags:
+            tags = task_match.result.get("tags", [])
+        if not animals_or_pets:
+            animals_or_pets = task_match.result.get("animals_or_pets", [])
+        if not objects:
+            objects = task_match.result.get("objects", [])
+        if not people:
+            people = task_match.result.get("people", [])
+        if not suggested_filename:
+            suggested_filename = task_match.result.get("suggested_filename", "")
+        if not audio_transcript:
             audio_transcript = task_match.result.get("audio_transcript")
+        if not pending_date_proposal:
+            pending_date_proposal = task_match.result.get("pending_date_proposal")
+        if not detected_date_in_context:
+            detected_date_in_context = task_match.result.get("detected_date_in_context")
+        if not detected_date_evidence:
+            detected_date_evidence = task_match.result.get("detected_date_evidence")
+        if not date_source_used:
+            date_source_used = task_match.result.get("date_source_used")
+        if not creation_time:
+            creation_time = task_match.result.get("date_used")
 
     if not creation_time:
         try:
@@ -2233,6 +2362,11 @@ def get_video_results(file_path: str):
         "suggested_filename": formatted_suggested_name,
         "ai_slug": suggested_filename or stem,
         "creation_time": creation_time,
+        "date_used": creation_time,
+        "date_source_used": date_source_used,
+        "pending_date_proposal": pending_date_proposal,
+        "detected_date_in_context": detected_date_in_context,
+        "detected_date_evidence": detected_date_evidence,
         "provider": provider,
         "model": model,
         "processed_at": processed_at,

@@ -928,6 +928,85 @@ function renderLatestResult(task) {
     btnModal.onclick = () => openResultsModal(targetPath);
   }
 
+  // Date proposal handling in Latest Result card
+  const latestProposalBanner = document.getElementById("latest-result-date-proposal-banner");
+  const latestProposalText = document.getElementById("latest-date-proposal-text");
+  const latestProposalEvidence = document.getElementById("latest-date-proposal-evidence");
+  const btnLatestApply = document.getElementById("btn-latest-apply-date");
+  const btnLatestDismiss = document.getElementById("btn-latest-dismiss-date");
+
+  if (latestProposalBanner) {
+    const prop = res.pending_date_proposal;
+    if (prop && prop.status === "pending") {
+      latestProposalBanner.classList.remove("hidden");
+      const curFormatted = prop.current_date_formatted || prop.current_date;
+      const propFormatted = prop.proposed_date_formatted || prop.proposed_date;
+      const sourceLabel = prop.source === "context" ? "Video visual/audio context" : "Filename";
+      if (latestProposalText) {
+        latestProposalText.innerHTML = `Identified <strong>${escapeHtml(propFormatted)}</strong> (${sourceLabel}), vs metadata <strong>${escapeHtml(curFormatted)}</strong>.`;
+      }
+      if (latestProposalEvidence) {
+        latestProposalEvidence.textContent = prop.evidence ? `Evidence: ${prop.evidence}` : "";
+      }
+      if (btnLatestApply) {
+        btnLatestApply.onclick = async () => {
+          btnLatestApply.disabled = true;
+          btnLatestApply.textContent = "Updating...";
+          try {
+            const updRes = await fetch("/api/date/confirm-update", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                file_path: targetPath,
+                action: "apply",
+                new_date: prop.proposed_datetime_iso || prop.proposed_date,
+                task_id: task.id
+              })
+            });
+            if (updRes.ok) {
+              latestProposalBanner.classList.add("hidden");
+              if (window.pollStatus) window.pollStatus();
+            } else {
+              const err = await updRes.json();
+              alert("Failed to update date: " + (err.detail || JSON.stringify(err)));
+              btnLatestApply.disabled = false;
+              btnLatestApply.textContent = "✓ Update Date";
+            }
+          } catch (e) {
+            alert("Error updating date: " + e.message);
+            btnLatestApply.disabled = false;
+            btnLatestApply.textContent = "✓ Update Date";
+          }
+        };
+      }
+      if (btnLatestDismiss) {
+        btnLatestDismiss.onclick = async () => {
+          btnLatestDismiss.disabled = true;
+          try {
+            await fetch("/api/date/confirm-update", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                file_path: targetPath,
+                action: "dismiss",
+                task_id: task.id
+              })
+            });
+            latestProposalBanner.classList.add("hidden");
+            if (window.pollStatus) window.pollStatus();
+          } catch (e) {
+            console.error("Error dismissing date proposal", e);
+            latestProposalBanner.classList.add("hidden");
+          } finally {
+            btnLatestDismiss.disabled = false;
+          }
+        };
+      }
+    } else {
+      latestProposalBanner.classList.add("hidden");
+    }
+  }
+
   card.classList.remove("hidden");
 }
 
@@ -1896,6 +1975,10 @@ async function loadConfig() {
     if (dateSourceEl) dateSourceEl.value = cfg.date_source || "smart";
     const dateOverrideEl = document.getElementById("cfg-default-date-override");
     if (dateOverrideEl) dateOverrideEl.value = cfg.default_date_override || "";
+    const detectedDateActionEl = document.getElementById("cfg-detected-date-action");
+    if (detectedDateActionEl) detectedDateActionEl.value = cfg.detected_date_action || "ask";
+    const syncMtimeEl = document.getElementById("cfg-sync-file-mtime-with-date");
+    if (syncMtimeEl) syncMtimeEl.checked = cfg.sync_file_mtime_with_date ?? true;
 
     // Prompt Guidance & Custom System Prompt
     const defaultGuidanceEl = document.getElementById("cfg-default-prompt-guidance");
@@ -2346,7 +2429,9 @@ function initSettings() {
       default_slug_guidance: document.getElementById("cfg-default-slug-guidance")?.value.trim() || "",
       batch_slug_guidance: document.getElementById("queue-slug-guidance")?.value.trim() || "",
       use_filename_context: document.getElementById("cfg-use-filename-context")?.checked ?? true,
-      filename_date_order: document.getElementById("cfg-filename-date-order")?.value || "auto"
+      filename_date_order: document.getElementById("cfg-filename-date-order")?.value || "auto",
+      detected_date_action: document.getElementById("cfg-detected-date-action")?.value || "ask",
+      sync_file_mtime_with_date: document.getElementById("cfg-sync-file-mtime-with-date")?.checked ?? true
     };
 
     try {
@@ -3510,6 +3595,84 @@ async function openResultsModal(filePath) {
 
     document.getElementById("results-modal-filename").textContent = data.filename;
     document.getElementById("results-display-title").textContent = data.title || data.filename;
+
+    // Pending Date Confirmation Proposal
+    const proposalBanner = document.getElementById("modal-date-proposal-banner");
+    const proposalText = document.getElementById("modal-date-proposal-text");
+    const proposalEvidence = document.getElementById("modal-date-proposal-evidence");
+    const btnApplyDate = document.getElementById("btn-modal-apply-date");
+    const btnDismissDate = document.getElementById("btn-modal-dismiss-date");
+
+    if (proposalBanner) {
+      const prop = data.pending_date_proposal;
+      if (prop && prop.status === "pending") {
+        proposalBanner.classList.remove("hidden");
+        const curFormatted = prop.current_date_formatted || prop.current_date;
+        const propFormatted = prop.proposed_date_formatted || prop.proposed_date;
+        const sourceLabel = prop.source === "context" ? "Video visual/audio context" : "Original filename";
+        if (proposalText) {
+          proposalText.innerHTML = `Identified <strong>${escapeHtml(propFormatted)}</strong> (from ${sourceLabel}), whereas file metadata records <strong>${escapeHtml(curFormatted)}</strong>. Would you like to update the video and sidecar creation dates to match?`;
+        }
+        if (proposalEvidence) {
+          proposalEvidence.textContent = prop.evidence ? `Evidence: ${prop.evidence}` : "";
+        }
+        if (btnApplyDate) {
+          btnApplyDate.onclick = async () => {
+            btnApplyDate.disabled = true;
+            btnApplyDate.textContent = "Updating...";
+            try {
+              const res = await fetch("/api/date/confirm-update", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  file_path: filePath,
+                  action: "apply",
+                  new_date: prop.proposed_datetime_iso || prop.proposed_date
+                })
+              });
+              if (res.ok) {
+                const resData = await res.json();
+                proposalBanner.classList.add("hidden");
+                const updatedPath = resData.final_path || filePath;
+                await openResultsModal(updatedPath);
+              } else {
+                const err = await res.json();
+                alert("Failed to update date: " + (err.detail || JSON.stringify(err)));
+                btnApplyDate.disabled = false;
+                btnApplyDate.textContent = "✓ Update Date";
+              }
+            } catch (e) {
+              alert("Error updating date: " + e.message);
+              btnApplyDate.disabled = false;
+              btnApplyDate.textContent = "✓ Update Date";
+            }
+          };
+        }
+        if (btnDismissDate) {
+          btnDismissDate.onclick = async () => {
+            btnDismissDate.disabled = true;
+            try {
+              await fetch("/api/date/confirm-update", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  file_path: filePath,
+                  action: "dismiss"
+                })
+              });
+              proposalBanner.classList.add("hidden");
+            } catch (e) {
+              console.error("Error dismissing date proposal", e);
+              proposalBanner.classList.add("hidden");
+            } finally {
+              btnDismissDate.disabled = false;
+            }
+          };
+        }
+      } else {
+        proposalBanner.classList.add("hidden");
+      }
+    }
     
     const suggestedEl = document.getElementById("results-suggested-name");
     const suggestedBox = document.getElementById("results-suggested-name-box");

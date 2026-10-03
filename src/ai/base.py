@@ -21,6 +21,8 @@ class VideoAnalysisResult(BaseModel):
     animals_or_pets: List[str] = Field(default_factory=list, description="Detected animals, dogs, cats, or pets (with breed if recognizable)")
     objects: List[str] = Field(default_factory=list, description="Prominent physical objects, tools, sports gear, equipment, vehicles, instruments")
     suggested_filename: str = Field(default="", description="Safe slugified filename recommendation")
+    detected_date_in_context: Optional[str] = Field(default=None, description="Date detected visually or audibly in the video context (e.g. wall calendar, camcorder stamp, newspaper, banner, or spoken date)")
+    detected_date_evidence: Optional[str] = Field(default=None, description="Visual or audible evidence for the detected date")
     audio_transcript: Optional[str] = None
     provider_name: str = ""
     model_name: str = ""

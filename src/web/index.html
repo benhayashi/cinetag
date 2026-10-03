@@ -369,6 +369,23 @@
               <button id="btn-open-latest-modal" class="btn btn-primary">👁️ View Full Results & Events</button>
             </div>
           </div>
+          <!-- Interactive Date Confirmation Banner -->
+          <div id="latest-result-date-proposal-banner" class="hidden" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 0.75rem 1rem; margin-top: 0.75rem; margin-bottom: 0.75rem;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem; flex-wrap:wrap;">
+              <div style="display:flex; gap:0.6rem; align-items:flex-start;">
+                <span style="font-size:1.2rem;">📅</span>
+                <div>
+                  <strong style="color: #fbbf24; font-size:0.9rem;">Date Update Suggested</strong>
+                  <p id="latest-date-proposal-text" style="font-size:0.85rem; color:#f1f5f9; margin:0.2rem 0 0 0; line-height:1.4;"></p>
+                  <small id="latest-date-proposal-evidence" style="color:#94a3b8; font-size:0.75rem;"></small>
+                </div>
+              </div>
+              <div style="display:flex; gap:0.4rem; align-items:center;">
+                <button id="btn-latest-apply-date" class="btn btn-sm btn-primary" style="background:#f59e0b; border-color:#d97706; color:#0f172a; font-weight:600; font-size:0.8rem;">✓ Update Date</button>
+                <button id="btn-latest-dismiss-date" class="btn btn-sm btn-secondary" style="font-size:0.78rem;">✕ Dismiss</button>
+              </div>
+            </div>
+          </div>
           <div class="mt-2">
             <p id="latest-result-summary" style="font-size:0.9rem; line-height:1.5; color:var(--text-main); margin-bottom:0.75rem;">
               <!-- Summary text populated on completion -->
@@ -1380,6 +1397,24 @@
               <input type="text" id="cfg-default-date-override" class="form-control" placeholder="YYYY-MM-DD (leave empty for automatic detection)">
               <small class="helper-text">If set, forces all queued files to use this date unless overridden per-task.</small>
             </div>
+
+            <div class="form-group">
+              <label for="cfg-detected-date-action">Detected Context/Filename Date Action</label>
+              <select id="cfg-detected-date-action" class="form-control">
+                <option value="ask" selected>🙋 Ask Operator (Display confirmation prompt before updating)</option>
+                <option value="auto">⚡ Automatic (Update file creation date and sidecars immediately)</option>
+                <option value="ignore">🛡️ Ignore (Keep existing file metadata dates)</option>
+              </select>
+              <small class="helper-text">Action when a date is found in video context (e.g. wall calendar, timestamp overlay, cake) or in the filename that differs from file container metadata.</small>
+            </div>
+
+            <div class="form-group" style="display:flex; flex-direction:column; justify-content:center;">
+              <label class="checkbox-label" style="margin-top:1.5rem; display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                <input type="checkbox" id="cfg-sync-file-mtime-with-date" checked>
+                <span><strong>Sync Filesystem Timestamp (mtime)</strong> with detected date</span>
+              </label>
+              <small class="helper-text">Updates file modification times so system file managers (Explorer/Finder) sort clips by their historical date.</small>
+            </div>
           </div>
 
           <!-- Live Preview Card -->
@@ -1493,6 +1528,24 @@
         <button id="btn-close-results-modal" class="modal-close-btn" title="Close">&times;</button>
       </div>
       <div class="modal-body">
+        <!-- Interactive Date Confirmation Banner -->
+        <div id="modal-date-proposal-banner" class="hidden" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1rem;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem; flex-wrap:wrap;">
+            <div style="display:flex; gap:0.6rem; align-items:flex-start;">
+              <span style="font-size:1.3rem;">📅</span>
+              <div>
+                <strong style="color: #fbbf24; font-size:0.95rem;">Date Discrepancy Detected</strong>
+                <p id="modal-date-proposal-text" style="font-size:0.85rem; color:#f1f5f9; margin:0.25rem 0 0 0; line-height:1.4;"></p>
+                <small id="modal-date-proposal-evidence" style="color:#94a3b8; font-size:0.75rem;"></small>
+              </div>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <button id="btn-modal-apply-date" class="btn btn-sm btn-primary" style="background:#f59e0b; border-color:#d97706; color:#0f172a; font-weight:600;">✓ Update Date</button>
+              <button id="btn-modal-dismiss-date" class="btn btn-sm btn-secondary" style="font-size:0.8rem;">✕ Keep Original</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Title & Suggested Filename -->
         <div class="results-field-group">
           <div class="flex-between" style="align-items:center;">

@@ -106,6 +106,8 @@ class AppConfig(BaseModel):
     rename_time_format: str = Field(default="zulu_compact", description="zulu_compact | zulu_dashed | local_compact | local_dashed")
     date_source: str = Field(default="smart", description="smart | filename | metadata")
     default_date_override: Optional[str] = Field(default=None, description="Optional manual batch date override (YYYY-MM-DD or ISO timestamp)")
+    detected_date_action: str = Field(default="ask", description="How to handle date/time found in filename or visual video context: 'ask' (request operator confirmation) | 'auto' (automatically update recorded date and filenames) | 'ignore' (keep original metadata)")
+    sync_file_mtime_with_date: bool = Field(default=True, description="When date is updated, synchronize filesystem modification time (mtime)")
 
     # In-file Tagging (Safe Mode)
     enable_in_file_tagging: bool = False

@@ -231,6 +231,55 @@ class QueueManager:
                 return target_task
         return None
 
+    def update_task_date(
+        self,
+        file_path: str,
+        new_date_iso: str,
+        date_source: str = "context",
+        task_id: Optional[str] = None
+    ) -> Optional[TaskItem]:
+        """Update in-memory queue task date and dismiss or mark proposal resolved."""
+        with self._lock:
+            resolved_p = str(Path(file_path).resolve())
+            target_task = None
+            for t in self.queue:
+                if (task_id and t.id == task_id) or str(Path(t.file_path).resolve()) == resolved_p:
+                    target_task = t
+                    break
+            if not target_task and self.current_task:
+                if (task_id and self.current_task.id == task_id) or str(Path(self.current_task.file_path).resolve()) == resolved_p:
+                    target_task = self.current_task
+
+            if target_task:
+                if target_task.result:
+                    target_task.result["date_used"] = new_date_iso
+                    target_task.result["date_source_used"] = date_source
+                    target_task.result["pending_date_proposal"] = None
+                return target_task
+        return None
+
+    def dismiss_task_date_proposal(
+        self,
+        file_path: str,
+        task_id: Optional[str] = None
+    ) -> Optional[TaskItem]:
+        """Dismiss pending date proposal for a task without changing dates."""
+        with self._lock:
+            resolved_p = str(Path(file_path).resolve())
+            target_task = None
+            for t in self.queue:
+                if (task_id and t.id == task_id) or str(Path(t.file_path).resolve()) == resolved_p:
+                    target_task = t
+                    break
+            if not target_task and self.current_task:
+                if (task_id and self.current_task.id == task_id) or str(Path(self.current_task.file_path).resolve()) == resolved_p:
+                    target_task = self.current_task
+
+            if target_task and target_task.result:
+                target_task.result["pending_date_proposal"] = None
+                return target_task
+        return None
+
     def get_status(self) -> Dict[str, Any]:
         with self._lock:
             total = len(self.queue)
@@ -293,23 +342,75 @@ class QueueManager:
             meta = probe_video(video_path, custom_ffprobe=cfg.ffprobe_path)
 
             # Date extraction & resolution (smart fallback, filename date extraction, or batch override)
-            from src.media.renamer import resolve_datetime
+            from src.media.renamer import resolve_datetime, extract_datetime_from_filename
             date_override_val = task.date_override or getattr(cfg, "default_date_override", None)
             date_source_val = task.date_source or getattr(cfg, "date_source", "smart")
             date_order_pref = task.filename_date_order or getattr(cfg, "filename_date_order", "auto")
+            detected_date_action = getattr(cfg, "detected_date_action", "ask")
+            sync_mtime = getattr(cfg, "sync_file_mtime_with_date", True)
+
+            raw_creation_time = meta.get("creation_time")
+            dt_from_fn = extract_datetime_from_filename(task.filename, order_preference=date_order_pref)
+
             dt_local, dt_utc, date_source_used = resolve_datetime(
                 original_path=video_path,
-                creation_date=meta.get("creation_time"),
+                creation_date=raw_creation_time,
                 date_override=date_override_val,
                 date_source=date_source_val,
                 original_filename=task.filename,
                 date_order=date_order_pref
             )
             resolved_iso = dt_local.isoformat()
-            if date_source_used in ("override", "filename") or not meta.get("creation_time"):
+
+            if date_override_val:
+                meta["creation_time"] = resolved_iso
+                meta["date_source_used"] = "override"
+                if sync_mtime and video_path.exists():
+                    try:
+                        os.utime(video_path, (dt_local.timestamp(), dt_local.timestamp()))
+                    except Exception:
+                        pass
+                self.log(f"Applied date override for {video_path.name}: {resolved_iso}", task_id=task.id)
+            elif date_source_used == "filename":
+                if not raw_creation_time or detected_date_action == "auto" or date_source_val == "filename":
+                    meta["creation_time"] = resolved_iso
+                    meta["date_source_used"] = "filename"
+                    if sync_mtime and video_path.exists():
+                        try:
+                            os.utime(video_path, (dt_local.timestamp(), dt_local.timestamp()))
+                        except Exception:
+                            pass
+                    self.log(f"Determined video date from filename for {video_path.name}: {resolved_iso}", task_id=task.id)
+                elif detected_date_action == "ask" and raw_creation_time:
+                    try:
+                        raw_dt = datetime.fromisoformat(str(raw_creation_time).replace("Z", "+00:00"))
+                    except Exception:
+                        raw_dt = None
+                    if raw_dt and (raw_dt.year != dt_local.year or raw_dt.month != dt_local.month or raw_dt.day != dt_local.day):
+                        meta["creation_time"] = raw_creation_time
+                        meta["date_source_used"] = "metadata"
+                        meta["pending_date_proposal"] = {
+                            "proposed_date": dt_local.strftime("%Y-%m-%d"),
+                            "proposed_datetime_iso": resolved_iso,
+                            "proposed_date_formatted": dt_local.strftime("%B %d, %Y"),
+                            "current_date": raw_dt.strftime("%Y-%m-%d"),
+                            "current_date_formatted": raw_dt.strftime("%B %d, %Y"),
+                            "source": "filename",
+                            "evidence": f"Filename '{task.filename}' specifies date {dt_local.strftime('%Y-%m-%d')}",
+                            "status": "pending"
+                        }
+                        self.log(f"📅 Date found in filename ({dt_local.strftime('%Y-%m-%d')}) differs from container metadata. Awaiting operator confirmation.", task_id=task.id)
+                    else:
+                        meta["creation_time"] = resolved_iso
+                        meta["date_source_used"] = "filename"
+                else:
+                    meta["creation_time"] = raw_creation_time or resolved_iso
+                    meta["date_source_used"] = "metadata"
+            else:
                 meta["creation_time"] = resolved_iso
                 meta["date_source_used"] = date_source_used
-                self.log(f"Determined video date for {video_path.name}: {resolved_iso} (source: {date_source_used})", task_id=task.id)
+                if date_source_used != "fallback":
+                    self.log(f"Determined video date for {video_path.name}: {resolved_iso} (source: {date_source_used})", task_id=task.id)
 
             task.progress = 15
             task.stage = "Checking subtitles & audio"
@@ -599,6 +700,67 @@ class QueueManager:
                 except Exception as fe:
                     self.log(f"Facial recognition note: {fe}", level="warning", task_id=task.id)
 
+            # Evaluate detected date from video context (visual cues: calendar, clock, newspaper, banner, or audio transcript)
+            if getattr(analysis, "detected_date_in_context", None):
+                detected_date_action = getattr(task, "detected_date_action", None) or getattr(cfg, "detected_date_action", "ask")
+                sync_mtime = getattr(cfg, "sync_file_mtime_with_date", True)
+                ctx_date_str = str(analysis.detected_date_in_context).strip()
+                dt_ctx = None
+                for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d", "%m/%d/%Y", "%Y%m%d"):
+                    try:
+                        dt_ctx = datetime.strptime(ctx_date_str, fmt)
+                        break
+                    except ValueError:
+                        pass
+                if not dt_ctx:
+                    try:
+                        dt_ctx = datetime.fromisoformat(ctx_date_str.replace("Z", "+00:00"))
+                    except Exception:
+                        pass
+
+                if dt_ctx:
+                    current_iso = meta.get("creation_time")
+                    cur_dt = None
+                    if current_iso:
+                        try:
+                            cur_dt = datetime.fromisoformat(str(current_iso).replace("Z", "+00:00"))
+                        except Exception:
+                            pass
+
+                    is_different = (cur_dt is None) or (
+                        cur_dt.year != dt_ctx.year or cur_dt.month != dt_ctx.month or cur_dt.day != dt_ctx.day
+                    )
+
+                    if is_different:
+                        evidence_str = analysis.detected_date_evidence or "Visual or audio cue detected in video context"
+                        if detected_date_action == "auto":
+                            meta["creation_time"] = dt_ctx.isoformat()
+                            meta["date_source_used"] = "context"
+                            if sync_mtime:
+                                try:
+                                    os.utime(video_path, (dt_ctx.timestamp(), dt_ctx.timestamp()))
+                                except Exception:
+                                    pass
+                            self.log(
+                                f"📅 Auto-updated video date from context ({dt_ctx.strftime('%Y-%m-%d')}): {evidence_str}",
+                                task_id=task.id
+                            )
+                        elif detected_date_action == "ask":
+                            meta["pending_date_proposal"] = {
+                                "proposed_date": dt_ctx.strftime("%Y-%m-%d"),
+                                "proposed_datetime_iso": dt_ctx.isoformat(),
+                                "proposed_date_formatted": dt_ctx.strftime("%B %d, %Y"),
+                                "current_date": cur_dt.strftime("%Y-%m-%d") if cur_dt else "None",
+                                "current_date_formatted": cur_dt.strftime("%B %d, %Y") if cur_dt else "None",
+                                "source": "context",
+                                "evidence": evidence_str,
+                                "status": "pending"
+                            }
+                            self.log(
+                                f"📅 Date spotted in video context ({dt_ctx.strftime('%Y-%m-%d')}): {evidence_str}. Awaiting operator confirmation.",
+                                task_id=task.id
+                            )
+
             # 5. Export sidecars
             task.stage = "Writing sidecars"
             task.progress = 85
@@ -727,7 +889,12 @@ class QueueManager:
                 "audio_transcript": transcript or subtitle_dialogue,
                 "sidecars": written_sidecars,
                 "subtitles_used": bool(subtitles_found and cfg.use_subtitles),
-                "subtitle_source": sub_source
+                "subtitle_source": sub_source,
+                "pending_date_proposal": meta.get("pending_date_proposal"),
+                "detected_date_in_context": analysis.detected_date_in_context,
+                "detected_date_evidence": analysis.detected_date_evidence,
+                "date_used": meta.get("creation_time"),
+                "date_source_used": meta.get("date_source_used")
             }
             self.log(f"Successfully processed {video_path.name}", task_id=task.id)
 
