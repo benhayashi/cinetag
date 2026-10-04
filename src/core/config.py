@@ -64,6 +64,7 @@ class AppConfig(BaseModel):
     use_subtitles: bool = Field(default=True, description="Use accompanying .srt or embedded subtitles as AI context")
     prefer_subtitles_over_whisper: bool = Field(default=True, description="If subtitles exist, use them and skip running Whisper")
     full_transcription_if_no_subtitles: bool = Field(default=True, description="Fallback to full Whisper audio transcription when no subtitles exist")
+    synthesize_visual_subtitles: bool = Field(default=False, description="Synthesize/devise visual scene and event subtitles (.srt) when no spoken dialogue or audio is found")
 
     # Pipeline Concurrency Mode
     processing_execution_mode: str = Field(default="serial", description="serial | concurrent")

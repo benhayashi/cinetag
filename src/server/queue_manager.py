@@ -803,8 +803,8 @@ class QueueManager:
                         segments=transcript_segments
                     )
 
-                # Fallback to visual events or summary if no speech was detected
-                if not srt_body.strip():
+                # Fallback to visual events or summary if no speech was detected and visual subtitles are enabled
+                if not srt_body.strip() and getattr(cfg, "synthesize_visual_subtitles", False):
                     srt_body = generate_srt_from_events(
                         events=analysis.events,
                         total_duration=meta.get("duration"),

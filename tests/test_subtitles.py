@@ -126,7 +126,8 @@ def test_queue_manager_exports_txt_and_srt_without_speech(tmp_path: Path, monkey
         export_xmp=False,
         export_nfo=False,
         transcribe_audio=False,
-        auto_rename=False
+        auto_rename=False,
+        synthesize_visual_subtitles=True
     )
     monkeypatch.setattr("src.server.queue_manager.load_config", lambda: cfg)
     qm = QueueManager()
@@ -175,9 +176,73 @@ def test_queue_manager_exports_txt_and_srt_without_speech(tmp_path: Path, monkey
     srt_file = tmp_path / "silent_home_movie.srt"
 
     assert txt_file.exists(), "Text sidecar should be created"
-    assert srt_file.exists(), "SRT sidecar should be created even when speech transcript is absent"
+    assert srt_file.exists(), "SRT sidecar should be created when synthesize_visual_subtitles is True"
 
     srt_content = srt_file.read_text(encoding="utf-8")
     assert "Family sits on picnic blanket" in srt_content
     assert "Pouring lemonade into glasses" in srt_content
+
+
+def test_queue_manager_skips_visual_srt_when_disabled(tmp_path: Path, monkeypatch):
+    from src.server.queue_manager import QueueManager, TaskItem
+    from src.core.config import AppConfig
+    from src.ai.base import VideoAnalysisResult, TimestampEvent
+
+    cfg = AppConfig(
+        export_txt=True,
+        export_srt=True,
+        export_info_json=False,
+        export_xmp=False,
+        export_nfo=False,
+        transcribe_audio=False,
+        auto_rename=False,
+        synthesize_visual_subtitles=False
+    )
+    monkeypatch.setattr("src.server.queue_manager.load_config", lambda: cfg)
+    qm = QueueManager()
+
+    dummy_vid = tmp_path / "silent_home_movie_2.mp4"
+    dummy_vid.write_text("fake video content")
+
+    monkeypatch.setattr("src.server.queue_manager.probe_video", lambda *args, **kwargs: {
+        "duration": 20.0,
+        "width": 1920,
+        "height": 1080,
+        "has_audio": False,
+        "creation_time": "2024-06-01T12:00:00"
+    })
+    monkeypatch.setattr("src.server.queue_manager.extract_frames", lambda *args, **kwargs: [
+        {"path": str(dummy_vid), "timecode": "00:00", "frame_index": 0, "timestamp_seconds": 0.0}
+    ])
+
+    analysis_res = VideoAnalysisResult(
+        title="Silent Picnic Afternoon",
+        summary="A lovely quiet afternoon picnic in the backyard garden.",
+        events=[
+            TimestampEvent(timecode="00:00", description="Family sits on picnic blanket", is_highlight=False),
+        ],
+        tags=["picnic"],
+        people_or_subjects=[],
+        animals_or_pets=[],
+        objects=[],
+        suggested_filename="silent_picnic"
+    )
+
+    class MockProvider:
+        def describe_video(self, *args, **kwargs):
+            return analysis_res
+
+    monkeypatch.setattr("src.server.queue_manager.OllamaVisionProvider", lambda *args, **kwargs: MockProvider())
+
+    task = TaskItem(file_path=str(dummy_vid), filename=dummy_vid.name)
+    qm._process_single_task(task)
+
+    assert task.status == "completed"
+
+    txt_file = tmp_path / "silent_home_movie_2.mp4.txt"
+    srt_file = tmp_path / "silent_home_movie_2.srt"
+
+    assert txt_file.exists(), "Text sidecar should be created"
+    assert not srt_file.exists(), "SRT sidecar should NOT be created when synthesize_visual_subtitles is False and there is no speech"
+
 

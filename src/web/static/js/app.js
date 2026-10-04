@@ -1944,6 +1944,8 @@ async function loadConfig() {
     if (prefSubEl) prefSubEl.checked = cfg.prefer_subtitles_over_whisper !== false;
     const fullTransFallbackEl = document.getElementById("cfg-full-transcription-fallback");
     if (fullTransFallbackEl) fullTransFallbackEl.checked = cfg.full_transcription_if_no_subtitles !== false;
+    const synthVisualSubEl = document.getElementById("cfg-synthesize-visual-subtitles");
+    if (synthVisualSubEl) synthVisualSubEl.checked = !!cfg.synthesize_visual_subtitles;
 
     // Face Recognition Settings
     const faceEnabledEl = document.getElementById("cfg-face-enabled");
@@ -2457,6 +2459,7 @@ function initSettings() {
       use_subtitles: document.getElementById("cfg-use-subtitles")?.checked ?? true,
       prefer_subtitles_over_whisper: document.getElementById("cfg-prefer-subtitles")?.checked ?? true,
       full_transcription_if_no_subtitles: document.getElementById("cfg-full-transcription-fallback")?.checked ?? true,
+      synthesize_visual_subtitles: document.getElementById("cfg-synthesize-visual-subtitles")?.checked ?? false,
       export_nfo: document.getElementById("cfg-export-nfo")?.checked ?? true,
       export_txt: document.getElementById("cfg-export-txt").checked,
       export_info_json: document.getElementById("cfg-export-json").checked,
