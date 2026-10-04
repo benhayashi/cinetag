@@ -52,6 +52,45 @@ def normalize_whisper_model_name(name: Optional[str]) -> str:
         return "large-v3-turbo"
     return n
 
+def sanitize_repetitive_segments(segments: list[Dict[str, Any]], max_consecutive_repeats: int = 2) -> list[Dict[str, Any]]:
+    """
+    Filter out hallucination loops where Whisper repeatedly emits the exact same phrase
+    or sentence over consecutive segments (e.g. across silence, music, or audio glitches).
+    """
+    if not segments:
+        return []
+
+    cleaned: list[Dict[str, Any]] = []
+    last_normalized_text = None
+    repeat_count = 0
+
+    import re
+    def normalize_text(text: str) -> str:
+        # Strip punctuation and lowercase for robust comparison
+        return re.sub(r"[^\w\s]", "", text).strip().lower()
+
+    for seg in segments:
+        raw_text = (seg.get("text") or "").strip()
+        if not raw_text:
+            continue
+
+        norm = normalize_text(raw_text)
+        if not norm:
+            continue
+
+        if norm == last_normalized_text:
+            repeat_count += 1
+            if repeat_count < max_consecutive_repeats:
+                cleaned.append(seg)
+            else:
+                logger.debug(f"[Whisper] Suppressed repetitive hallucinated segment: {raw_text!r}")
+        else:
+            last_normalized_text = norm
+            repeat_count = 0
+            cleaned.append(seg)
+
+    return cleaned
+
 def patch_pyav_metadata_errors_if_needed():
     """
     PyAV removed the 'metadata_errors' parameter in recent releases (14+),
@@ -440,7 +479,13 @@ class WhisperTranscriptionService:
                 str(audio_path),
                 language=self.language,
                 task=self.task,
-                beam_size=5
+                beam_size=5,
+                condition_on_previous_text=False,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+                repetition_penalty=1.15,
+                no_speech_threshold=0.6,
+                compression_ratio_threshold=2.4
             )
             seg_list = []
             text_parts = []
@@ -453,7 +498,9 @@ class WhisperTranscriptionService:
                         "end": float(segment.end),
                         "text": t
                     })
-            full_text = " ".join(text_parts).strip()
+            # Filter out consecutive repetitive hallucinated segments
+            seg_list = sanitize_repetitive_segments(seg_list)
+            full_text = " ".join(s["text"] for s in seg_list).strip()
             detected_lang = getattr(info, "language", None) or "auto"
             lang_str = f"detected language: {detected_lang}" + (" (translated to en)" if self.task == "translate" and detected_lang != "en" else "")
             done_desc = "Transcription & translation to English" if self.task == "translate" else "Transcription"
@@ -487,7 +534,12 @@ class WhisperTranscriptionService:
             if log_callback:
                 action_desc = "Transcribing audio and translating to English" if self.task == "translate" else "Transcribing audio"
                 log_callback(f"[Whisper] {action_desc} with openai-whisper...")
-            result = self._model_instance.transcribe(str(audio_path), language=self.language, task=self.task)
+            result = self._model_instance.transcribe(
+                str(audio_path),
+                language=self.language,
+                task=self.task,
+                condition_on_previous_text=False
+            )
 
             raw_text = result.get("text", "").strip()
             seg_list = []
@@ -499,6 +551,9 @@ class WhisperTranscriptionService:
                         "end": float(s.get("end", 0.0)),
                         "text": t
                     })
+            seg_list = sanitize_repetitive_segments(seg_list)
+            if seg_list:
+                raw_text = " ".join(s["text"] for s in seg_list).strip()
             return {"text": raw_text, "segments": seg_list}
         except ImportError:
             logger.warning("whisper package not installed.")
@@ -674,6 +729,11 @@ class WhisperTranscriptionService:
                         raw_text = jdata
                 else:
                     raw_text = res.text.strip()
+
+                if seg_list:
+                    seg_list = sanitize_repetitive_segments(seg_list)
+                    if raw_text:
+                        raw_text = " ".join(s["text"] for s in seg_list).strip()
 
                 final_text = raw_text.strip() if raw_text else None
                 if final_text:

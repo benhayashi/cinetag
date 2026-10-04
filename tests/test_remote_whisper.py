@@ -445,7 +445,37 @@ def test_app_config_whisper_translation_defaults():
     assert cfg.whisper_translate_to_english is True
 
 
+def test_sanitize_repetitive_segments():
+    from src.ai.whisper_service import sanitize_repetitive_segments
+
+    # Simulate Whisper getting stuck in a repetitive loop on silence/noise
+    segments = [
+        {"start": 0.0, "end": 2.0, "text": "Hello world"},
+        {"start": 2.0, "end": 4.0, "text": "Thank you."},
+        {"start": 4.0, "end": 6.0, "text": "Thank you!"},
+        {"start": 6.0, "end": 8.0, "text": "Thank you"},
+        {"start": 8.0, "end": 10.0, "text": "Thank you."},
+        {"start": 10.0, "end": 12.0, "text": "Moving on to the next topic."},
+    ]
+
+    cleaned = sanitize_repetitive_segments(segments, max_consecutive_repeats=2)
+    # Allows initial occurrence + 1 repeat (2 total "Thank you"), suppresses the 3rd and 4th
+    assert len(cleaned) == 4
+    texts = [s["text"] for s in cleaned]
+    assert texts[0] == "Hello world"
+    assert texts[1] == "Thank you."
+    assert texts[2] == "Thank you!"
+    assert texts[3] == "Moving on to the next topic."
 
 
+def test_sanitize_repetitive_segments_empty_and_normal():
+    from src.ai.whisper_service import sanitize_repetitive_segments
 
+    assert sanitize_repetitive_segments([]) == []
+    normal = [
+        {"start": 0.0, "end": 2.0, "text": "Sentence one."},
+        {"start": 2.0, "end": 4.0, "text": "Sentence two."},
+        {"start": 4.0, "end": 6.0, "text": "Sentence three."},
+    ]
+    assert len(sanitize_repetitive_segments(normal)) == 3
 
