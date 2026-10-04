@@ -661,16 +661,19 @@ function renderQueueTable(tasks, currentTask) {
       actionsHtml = `<span class="text-muted" style="font-size:0.75rem; font-weight:500;">Active</span>`;
     } else if (t.status === "completed") {
       actionsHtml = `
-        <div style="display:flex; gap:4px; align-items:center;">
-          <button class="btn btn-sm btn-secondary" onclick="openResultsModal('${escapeHtml(t.file_path)}')" title="View Analysis Results">👁️ View</button>
-          <button class="btn btn-sm btn-secondary" onclick="openRenameModal('${escapeHtml(t.file_path)}', '${escapeHtml((t.result && t.result.title) || '')}', '${t.id}')" title="Rename video and all support files">✏️ Rename</button>
+        <div style="display:flex; gap:4px; align-items:center; justify-content:flex-end;">
+          <button class="btn btn-sm btn-secondary" onclick="openResultsModalByTaskId('${t.id}')" title="View Analysis Results">👁️ View</button>
+          <button class="btn btn-sm btn-secondary" onclick="openRenameModalByTaskId('${t.id}')" title="Rename video and all support files">✏️ Rename</button>
           <button class="btn btn-sm btn-danger-outline" onclick="removeQueueItem('${t.id}')" title="Remove from queue list" style="padding:2px 6px;">✕</button>
         </div>
       `;
     } else {
       // queued or failed
       actionsHtml = `
-        <button class="btn btn-sm btn-danger-outline" onclick="removeQueueItem('${t.id}')" title="Remove video from queue">✕ Remove</button>
+        <div style="display:flex; gap:4px; align-items:center; justify-content:flex-end;">
+          <button class="btn btn-sm btn-secondary" onclick="openRenameModalByTaskId('${t.id}')" title="Rename video and support files">✏️ Rename</button>
+          <button class="btn btn-sm btn-danger-outline" onclick="removeQueueItem('${t.id}')" title="Remove video from queue">✕ Remove</button>
+        </div>
       `;
     }
 
@@ -698,11 +701,29 @@ function renderQueueTable(tasks, currentTask) {
           </span>
         </td>
         <td>${statusHtml}</td>
-        <td>${actionsHtml}</td>
+        <td style="text-align:right;">${actionsHtml}</td>
       </tr>
     `;
   }).join("");
 }
+
+window.openRenameModalByTaskId = function(taskId) {
+  const task = (lastQueueTasks || []).find(t => t.id === taskId);
+  if (!task) {
+    console.error("Task not found in queue:", taskId);
+    return;
+  }
+  const title = (task.result && task.result.title) || "";
+  const targetPath = (task.result && task.result.final_file_path) || task.file_path;
+  openRenameModal(targetPath, title, task.id);
+};
+
+window.openResultsModalByTaskId = function(taskId) {
+  const task = (lastQueueTasks || []).find(t => t.id === taskId);
+  if (!task) return;
+  const targetPath = (task.result && task.result.final_file_path) || task.file_path;
+  openResultsModal(targetPath);
+};
 
 window.toggleQueueTaskSelection = function(taskId, isChecked) {
   if (isChecked) {
@@ -717,10 +738,19 @@ function updateQueueSelectionUI() {
   const completedTasks = lastQueueTasks.filter(t => t.status === "completed");
   const seriesToolbar = document.getElementById("queue-series-toolbar");
   const seriesCountEl = document.getElementById("series-selected-count");
+  const btnRenameSelected = document.getElementById("btn-queue-rename-selected");
   if (seriesToolbar) {
     if (selectedCompletedTasks.size > 0) {
       seriesToolbar.classList.remove("hidden");
       if (seriesCountEl) seriesCountEl.textContent = selectedCompletedTasks.size;
+      if (btnRenameSelected) {
+        if (selectedCompletedTasks.size === 1) {
+          btnRenameSelected.classList.remove("hidden");
+          btnRenameSelected.textContent = "✏️ Rename Selected Clip...";
+        } else {
+          btnRenameSelected.classList.add("hidden");
+        }
+      }
     } else {
       seriesToolbar.classList.add("hidden");
     }
@@ -1482,6 +1512,19 @@ function initQueueControls() {
         return;
       }
       openSeriesRenameModal(selected);
+    });
+  }
+
+  // Individual rename button in queue series toolbar
+  const btnQueueRenameSelected = document.getElementById("btn-queue-rename-selected");
+  if (btnQueueRenameSelected) {
+    btnQueueRenameSelected.addEventListener("click", () => {
+      const selected = lastQueueTasks.filter(t => selectedCompletedTasks.has(t.id));
+      if (!selected.length) {
+        alert("Please select a video clip to rename.");
+        return;
+      }
+      openRenameModalByTaskId(selected[0].id);
     });
   }
 

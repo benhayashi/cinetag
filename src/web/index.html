@@ -327,6 +327,9 @@
               <button id="btn-clear-series-selection" class="btn btn-sm btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.5rem;">✕ Clear Selection</button>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center;">
+              <button id="btn-queue-rename-selected" class="btn btn-sm btn-secondary" style="font-weight:600;" title="Rename this individual video and all its support files">
+                ✏️ Rename Selected Clip...
+              </button>
               <button id="btn-open-series-rename" class="btn btn-sm btn-primary" style="background:#2563eb; border-color:#1d4ed8; font-weight:600;">
                 🔢 Rename Series / Enumerate...
               </button>
@@ -342,7 +345,7 @@
                   <th>Video File & Path</th>
                   <th>Source Folder</th>
                   <th width="220">Status & Progress</th>
-                  <th width="110">Actions</th>
+                  <th style="min-width: 175px; text-align: right;">Actions</th>
                 </tr>
               </thead>
               <tbody id="queue-tbody">
