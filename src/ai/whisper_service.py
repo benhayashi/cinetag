@@ -545,7 +545,12 @@ class WhisperTranscriptionService:
             task_info = f", task: '{self.task}'" if self.task == "translate" else ""
             log(f"[Remote Whisper] Connecting to {self.remote_url} (model: '{self.model_name}'{task_info}, audio size: {len(audio_bytes) / 1024:.1f} KB)...")
 
-            with httpx.Client(timeout=300.0) as client:
+            # Estimate duration in seconds from audio size (16kHz 16-bit mono PCM is ~32 KB/sec)
+            est_audio_seconds = (len(audio_bytes) / 1024.0) / 32.0
+            # Allow at least 600s (10 min), and scale generously with audio length (est_audio_seconds * 1.5 + 300s buffer, up to 3600s / 1 hr)
+            request_timeout = max(600.0, min(3600.0, est_audio_seconds * 1.5 + 300.0))
+
+            with httpx.Client(timeout=request_timeout) as client:
                 res = None
                 last_err = None
 
