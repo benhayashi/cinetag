@@ -26,6 +26,6 @@ RUN mkdir -p /data /media
 EXPOSE 5555
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:5555/api/status || exit 1
+  CMD curl -f http://localhost:5555/health || exit 1
 
 ENTRYPOINT ["python", "app.py", "--host", "0.0.0.0", "--port", "5555"]

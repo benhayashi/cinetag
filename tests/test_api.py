@@ -185,9 +185,10 @@ def test_api_check_conflicts(tmp_path):
     res3 = client.post("/api/queue/add", json={"file_paths": [str(vid)], "conflict_mode": "enumerate"})
     assert res3.json()["added_count"] == 1
 
-def test_api_download_srt_existing(tmp_path):
+def test_api_download_srt_existing(tmp_path, allow_path):
     vid = tmp_path / "lecture.mp4"
     vid.write_bytes(b"dummy video")
+    allow_path(vid)
     srt = tmp_path / "lecture.srt"
     srt.write_text("1\n00:00:01,000 --> 00:00:04,000\nHello lecture\n", encoding="utf-8")
 
@@ -195,10 +196,11 @@ def test_api_download_srt_existing(tmp_path):
     assert res.status_code == 200
     assert "Hello lecture" in res.text
 
-def test_api_download_srt_synthesized(tmp_path):
+def test_api_download_srt_synthesized(tmp_path, allow_path):
     import json
     vid = tmp_path / "speech.mp4"
     vid.write_bytes(b"dummy video")
+    allow_path(vid)
     info = tmp_path / "speech.info.json"
     info.write_text(json.dumps({
         "audio_transcript": "Good morning everyone. Welcome to the conference.",

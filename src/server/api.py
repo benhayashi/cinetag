@@ -3,7 +3,7 @@ import re
 import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Tuple
 import shutil
 import sys
 import subprocess
@@ -11,12 +11,16 @@ import uuid
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, File, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 
 from src.core.paths import get_uploads_dir, get_faces_dir, get_cache_dir, get_logs_dir
-from src.core.config import AppConfig, load_config, save_config
+from src.core.config import (
+    AppConfig, load_config, save_config,
+    apply_config_update, mask_secrets, resolve_secret, SECRET_FIELDS,
+)
+from src.core.version import __version__ as __app_version__
 from src.core.privacy import (
     get_storage_stats,
     clear_cache,
@@ -179,6 +183,55 @@ def format_size(size_bytes: int) -> str:
             return f"{size_bytes:.1f} {unit}"
         size_bytes /= 1024.0
     return f"{size_bytes:.1f} TB"
+
+MAX_FACE_ARCHIVE_BYTES = 500 * 1024 * 1024
+MAX_SRT_UPLOAD_BYTES = 5 * 1024 * 1024
+MAX_CONFIG_IMPORT_BYTES = 1024 * 1024
+
+
+def is_within(child: Path, parent: Path) -> bool:
+    try:
+        return Path(child).resolve().is_relative_to(Path(parent).resolve())
+    except (OSError, ValueError):
+        return False
+
+
+def sidecar_names_for(video_path: Path) -> List[str]:
+    """Exact sidecar file names associated with a video."""
+    name, stem = video_path.name, video_path.stem
+    return [
+        f"{name}.txt", f"{stem}.info.json", f"{name}.info.json", f"{stem}.xmp",
+        f"{stem}.nfo", f"{name}.edl", f"{stem}.srt", f"{name}.srt",
+        f"{stem}.en.srt", f"{stem}.eng.srt",
+    ]
+
+
+def require_allowed_path(path_str: str) -> Path:
+    """Resolve a path and ensure it is an upload or a queue-task file (or sidecar)."""
+    if not path_str:
+        raise HTTPException(status_code=400, detail="Missing path")
+    try:
+        p = Path(path_str).resolve()
+    except (OSError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if is_within(p, get_uploads_dir()):
+        return p
+    for task in list(manager.queue):
+        bases = [getattr(task, "file_path", None)]
+        result = getattr(task, "result", None)
+        if isinstance(result, dict):
+            bases.append(result.get("final_file_path"))
+        for b in bases:
+            if not b:
+                continue
+            try:
+                bp = Path(b).resolve()
+            except (OSError, ValueError):
+                continue
+            if p == bp or (p.parent == bp.parent and p.name in sidecar_names_for(bp)):
+                return p
+    raise HTTPException(status_code=403, detail="Path not permitted")
+
 
 # --- Endpoints ---
 
@@ -995,27 +1048,47 @@ def resolve_local_files(req: ResolveLocalFilesRequest):
         "detected_folder": detected_folder
     }
 
+def _apply_and_save_config(update: Dict[str, Any]) -> AppConfig:
+    """Validate an update against the schema; reject bad input without touching the saved file."""
+    current = load_config()
+    try:
+        updated = apply_config_update(current, update)
+    except ValidationError as e:
+        errors = [
+            {"field": ".".join(str(x) for x in err["loc"]), "message": err["msg"]}
+            for err in e.errors()
+        ]
+        raise HTTPException(status_code=422, detail={"message": "Invalid settings", "errors": errors}) from e
+    save_config(updated)
+    return updated
+
 @router.get("/config")
 def get_config():
-    return load_config().model_dump()
+    """Return settings. Secrets (API keys, tokens) are masked; the UI echoes the mask back to keep them unchanged."""
+    return mask_secrets(load_config().model_dump())
 
 @router.post("/config")
 def update_config(config_data: Dict[str, Any]):
-    current = load_config()
-    updated = current.model_copy(update=config_data)
-    save_config(updated)
-    return {"status": "ok", "config": updated.model_dump()}
+    updated = _apply_and_save_config(config_data)
+    return {"status": "ok", "config": mask_secrets(updated.model_dump())}
 
 @router.get("/config/export")
-def export_config():
-    """Export the current system configuration as a machine-readable JSON file."""
+def export_config(include_secrets: bool = False):
+    """Export the current system configuration as a machine-readable JSON file (secrets omitted by default)."""
     cfg = load_config()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    data = cfg.model_dump()
+    data.pop("access_token", None)
+    if not include_secrets:
+        for field in SECRET_FIELDS:
+            data[field] = ""
+        data["api_keys"] = {k: "" for k in (data.get("api_keys") or {})}
     export_payload = {
-        "app": "home-video-ai",
-        "version": "2.3.0",
+        "app": "cinetag",
+        "version": __app_version__,
         "exported_at": datetime.now().isoformat(),
-        "config": cfg.model_dump()
+        "secrets_included": include_secrets,
+        "config": data
     }
     content = json.dumps(export_payload, indent=2)
     return Response(
@@ -1033,16 +1106,21 @@ async def import_config(
 ):
     """
     Import and apply a configuration setup from an uploaded JSON file or JSON payload.
+    Blank secrets in the file keep the currently stored secrets.
     """
     imported_dict = None
     if file:
         try:
-            content = await file.read()
+            content = await file.read(MAX_CONFIG_IMPORT_BYTES + 1)
+            if len(content) > MAX_CONFIG_IMPORT_BYTES:
+                raise HTTPException(status_code=413, detail="Configuration file is too large")
             data = json.loads(content.decode("utf-8"))
             if isinstance(data, dict):
                 imported_dict = data.get("config", data)
+        except HTTPException:
+            raise
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid JSON configuration file: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid JSON configuration file: {e}") from e
     elif config_data:
         imported_dict = config_data.get("config", config_data)
     else:
@@ -1051,17 +1129,23 @@ async def import_config(
     if not isinstance(imported_dict, dict):
         raise HTTPException(status_code=400, detail="Configuration data must be a JSON object")
 
-    try:
-        current = load_config()
-        updated = current.model_copy(update=imported_dict)
-        save_config(updated)
-        return {
-            "status": "ok",
-            "message": "Settings imported successfully",
-            "config": updated.model_dump()
+    # An exported file has blank secrets; don't let that wipe stored keys.
+    imported_dict = dict(imported_dict)
+    for field in SECRET_FIELDS:
+        if imported_dict.get(field) == "":
+            imported_dict.pop(field)
+    if isinstance(imported_dict.get("api_keys"), dict):
+        current_keys = load_config().api_keys or {}
+        imported_dict["api_keys"] = {
+            k: (v if v else current_keys.get(k, "")) for k, v in imported_dict["api_keys"].items()
         }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to apply configuration: {e}")
+
+    updated = _apply_and_save_config(imported_dict)
+    return {
+        "status": "ok",
+        "message": "Settings imported successfully",
+        "config": mask_secrets(updated.model_dump())
+    }
 
 @router.get("/models/ollama")
 def list_ollama_models():
@@ -1079,7 +1163,7 @@ def list_ollama_models():
 def list_openai_models(url: Optional[str] = None, api_key: Optional[str] = None):
     cfg = load_config()
     target_url = (url or cfg.openai_compatible_url).rstrip("/")
-    target_key = api_key if api_key is not None else cfg.openai_compatible_api_key
+    target_key = resolve_secret(api_key, cfg.openai_compatible_api_key) if api_key is not None else cfg.openai_compatible_api_key
     provider = OpenAICompatibleVisionProvider(
         base_url=target_url,
         api_key=target_key
@@ -1119,7 +1203,8 @@ def test_cloud_connection(req: CloudProbeRequest):
     """Test cloud API connectivity and key validity dynamically from Settings."""
     cfg = load_config()
     prov_name = (req.provider or cfg.cloud_provider or "gemini").lower()
-    key = req.api_key if req.api_key is not None else (cfg.api_keys.get(prov_name) or cfg.api_keys.get("custom") or "")
+    stored_key = cfg.api_keys.get(prov_name) or cfg.api_keys.get("custom") or ""
+    key = resolve_secret(req.api_key, stored_key) if req.api_key is not None else stored_key
     active_model = req.model or cfg.cloud_model
     active_endpoint = req.endpoint or cfg.cloud_endpoint
 
@@ -1194,8 +1279,9 @@ def probe_whisper_remote(req: WhisperRemoteProbeRequest):
 
     transcribe_url, base_url = normalize_whisper_urls(req.url.strip())
     headers = {}
-    if req.api_key and req.api_key.strip():
-        headers["Authorization"] = f"Bearer {req.api_key.strip()}"
+    probe_key = resolve_secret(req.api_key, load_config().whisper_api_key)
+    if probe_key and probe_key.strip():
+        headers["Authorization"] = f"Bearer {probe_key.strip()}"
 
     discovered_models = []
     t0 = time.time()
@@ -1801,7 +1887,12 @@ async def upload_video_file(file: UploadFile = File(...)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename missing")
 
-    ext = Path(file.filename).suffix.lower()
+    # Never trust the client path: keep only the final component (handles / and \ separators)
+    safe_name = Path(file.filename.replace("\\", "/")).name.strip()
+    if not safe_name or safe_name in (".", "..") or safe_name.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    ext = Path(safe_name).suffix.lower()
     is_srt = (ext == ".srt")
     if ext not in SUPPORTED_EXTENSIONS and not is_srt:
         raise HTTPException(
@@ -1809,8 +1900,10 @@ async def upload_video_file(file: UploadFile = File(...)):
             detail=f"Unsupported format '{ext}'. Allowed: {', '.join(sorted(SUPPORTED_EXTENSIONS))} and .srt"
         )
 
-    uploads_dir = get_uploads_dir()
-    dest_path = uploads_dir / file.filename
+    uploads_dir = get_uploads_dir().resolve()
+    dest_path = uploads_dir / safe_name
+    if not is_within(dest_path.resolve(), uploads_dir):
+        raise HTTPException(status_code=400, detail="Invalid filename")
 
     # If uploading .srt, overwrite existing matching srt so it pairs with the video
     if not is_srt:
@@ -1821,10 +1914,23 @@ async def upload_video_file(file: UploadFile = File(...)):
             counter += 1
 
     try:
+        written = 0
+        limit = MAX_SRT_UPLOAD_BYTES if is_srt else None
         with open(dest_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if limit is not None and written > limit:
+                    raise HTTPException(status_code=413, detail="Subtitle file is too large")
+                buffer.write(chunk)
+    except HTTPException:
+        dest_path.unlink(missing_ok=True)
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}")
+        dest_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {e}") from e
 
     # Subtitles are staged as context companions and not enqueued as videos
     if is_srt:
@@ -1902,24 +2008,27 @@ def list_uploaded_files():
 
 @router.delete("/uploads/{filename}")
 def delete_uploaded_file(filename: str):
-    """Delete a specific uploaded file and all its associated sidecars."""
-    uploads_dir = get_uploads_dir()
-    target = uploads_dir / filename
+    """Delete a specific uploaded file and exactly its own sidecars (never sibling videos)."""
+    uploads_dir = get_uploads_dir().resolve()
+    safe_name = Path(filename).name
+    if not safe_name or safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    target = (uploads_dir / safe_name)
 
-    if not target.exists():
+    if not target.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Safety check: ensure file is strictly within uploads_dir
-    if not str(target.resolve()).startswith(str(uploads_dir.resolve())):
+    # Safety check: ensure file is strictly within uploads_dir (real path, symlink-safe)
+    if not is_within(target.resolve(), uploads_dir):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     # Delete video file
     target.unlink()
 
-    # Delete accompanying sidecars
-    prefix = filename
+    # Delete only this video's own sidecars, by exact name
     deleted_sidecars = []
-    for sidecar in uploads_dir.glob(f"{target.stem}*"):
+    for sidecar_name in sidecar_names_for(target):
+        sidecar = uploads_dir / sidecar_name
         if sidecar != target and sidecar.is_file():
             sidecar.unlink()
             deleted_sidecars.append(sidecar.name)
@@ -1938,14 +2047,14 @@ def purge_all_uploads():
 
 @router.get("/download")
 def download_file(file_path: str):
-    """Download a sidecar or processed video file."""
-    p = Path(file_path)
+    """Download a sidecar or processed video file (restricted to files CineTag knows about)."""
+    p = require_allowed_path(file_path)
     if not p.exists() or not p.is_file():
         raise HTTPException(status_code=404, detail="Requested file does not exist")
 
     # Return file attachment
     return FileResponse(
-        path=str(p.resolve()),
+        path=str(p),
         filename=p.name,
         media_type="application/octet-stream"
     )
@@ -1969,6 +2078,7 @@ def download_custom_video(req: CustomDownloadRequest):
         cand = uploads_dir / p.name
         if cand.exists():
             p = cand
+    p = require_allowed_path(str(p))
 
     if not p.exists() or not p.is_file():
         raise HTTPException(status_code=404, detail="Video file not found")
@@ -2424,7 +2534,7 @@ def download_srt(file_path: str):
     Download a separate .srt subtitle file for a video.
     Returns existing .srt if present, or dynamically synthesizes .srt from dialogue transcript.
     """
-    p = Path(file_path)
+    p = require_allowed_path(file_path)
     parent = p.parent
     stem = p.stem
 
@@ -2532,19 +2642,28 @@ def export_faces_database():
 async def import_faces_database(file: UploadFile = File(...), merge: bool = True):
     """Import and restore face database from an uploaded .zip archive."""
     import tempfile
-    if not file.filename.endswith(".zip"):
+    if not (file.filename or "").lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip database archives are supported")
 
     tmp_path = Path(tempfile.gettempdir()) / f"upload_{uuid.uuid4().hex}.zip"
     try:
+        written = 0
         with open(tmp_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > MAX_FACE_ARCHIVE_BYTES:
+                    raise HTTPException(status_code=413, detail="Face database archive is too large")
+                f.write(chunk)
 
         count = face_registry.import_database_zip(tmp_path, merge=merge)
         return {"status": "ok", "message": f"Successfully imported {count} face records.", "imported_count": count}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to import database: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to import database: {str(e)}") from e
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
@@ -2649,7 +2768,7 @@ def test_compreface_connection(req: TestCompreFaceRequest):
     """Test connection to an external CompreFace server."""
     import httpx
     url = req.url.rstrip("/") + "/api/v1/recognition/subjects"
-    headers = {"x-api-key": req.api_key}
+    headers = {"x-api-key": resolve_secret(req.api_key, load_config().compreface_api_key) or ""}
     try:
         with httpx.Client(timeout=5.0) as client:
             resp = client.get(url, headers=headers)

@@ -4,7 +4,8 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple, Set
+from collections import defaultdict
 
 from src.core.paths import get_history_path
 

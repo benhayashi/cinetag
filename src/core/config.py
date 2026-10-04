@@ -1,8 +1,11 @@
 import json
 import logging
+import os
+import shutil
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
-from pydantic import BaseModel, Field
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field, ValidationError
 
 from src.core.paths import get_config_path, get_app_root
 
@@ -115,28 +118,122 @@ class AppConfig(BaseModel):
     flush_backup_on_success: bool = Field(default=True, description="Automatically flush/delete the .bak file after successful in-file tagging and stream integrity verification.")
     verify_integrity: bool = True
 
-    # Web Server
-    host: str = "0.0.0.0"
+    # Web Server & Access Control
+    host: str = Field(default="127.0.0.1", description="Bind address. 127.0.0.1 = this computer only; 0.0.0.0 = whole LAN (an access token is then required).")
     port: int = 5555
+    access_token: str = Field(default="", description="Shared secret required for API/UI access when the server is bound to a non-loopback address. Auto-generated on first LAN start.")
+    cors_allowed_origins: List[str] = Field(default_factory=list, description="Extra browser origins allowed to call the API cross-origin (same-origin never needs this).")
+
+
+# --- Secret handling -------------------------------------------------------
+
+SECRET_MASK = "********"
+SECRET_FIELDS = ("openai_compatible_api_key", "whisper_api_key", "compreface_api_key")
+# Fields that may never be changed through the HTTP API (only via config file / env).
+API_READONLY_FIELDS = ("access_token",)
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def is_loopback_host(host: str) -> bool:
+    return (host or "").strip().lower() in LOOPBACK_HOSTS
+
+
+def mask_secrets(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a copy of a config dict with every secret replaced by SECRET_MASK (empty stays empty)."""
+    out = dict(data)
+    for field in SECRET_FIELDS:
+        if out.get(field):
+            out[field] = SECRET_MASK
+    if isinstance(out.get("api_keys"), dict):
+        out["api_keys"] = {k: (SECRET_MASK if v else v) for k, v in out["api_keys"].items()}
+    if out.get("access_token"):
+        out["access_token"] = SECRET_MASK
+    return out
+
+
+def resolve_secret(value: Optional[str], stored: Optional[str]) -> Optional[str]:
+    """If a client echoes back the mask, substitute the stored secret."""
+    if value == SECRET_MASK:
+        return stored
+    return value
+
+
+def apply_config_update(current: AppConfig, update: Dict[str, Any]) -> AppConfig:
+    """
+    Validate and apply a partial config update.
+
+    Unlike ``model_copy(update=...)`` this runs full pydantic validation (raising
+    ``pydantic.ValidationError`` on bad types), ignores unknown keys, keeps stored
+    secrets when the client sends the mask back, and refuses to change read-only fields.
+    """
+    merged = current.model_dump()
+    for key, value in (update or {}).items():
+        if key not in AppConfig.model_fields or key in API_READONLY_FIELDS:
+            continue
+        if key in SECRET_FIELDS:
+            value = resolve_secret(value, merged.get(key))
+        elif key == "api_keys" and isinstance(value, dict):
+            old_keys = merged.get("api_keys") or {}
+            value = {k: resolve_secret(v, old_keys.get(k)) for k, v in value.items()}
+        merged[key] = value
+    return AppConfig.model_validate(merged)
+
+
+# --- Persistence -----------------------------------------------------------
+
+def _backup_corrupt_config(config_file: Path) -> None:
+    try:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup = config_file.with_name(f"{config_file.name}.corrupt-{stamp}")
+        shutil.copy2(config_file, backup)
+        logger.error(f"Backed up unreadable/invalid config to {backup}")
+    except Exception as exc:
+        logger.warning(f"Could not back up invalid config: {exc}", exc_info=True)
+
 
 def load_config() -> AppConfig:
-    """Load configuration from config path or create defaults."""
+    """
+    Load configuration, or create defaults.
+
+    If the file has some invalid values, only those fields fall back to their
+    defaults (the rest of the user's settings are kept) and the original file is
+    backed up first, instead of silently resetting everything.
+    """
     config_file = get_config_path()
     if config_file.exists():
         try:
             with open(config_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return AppConfig(**data)
+            if not isinstance(data, dict):
+                raise ValueError("config root must be a JSON object")
         except Exception as e:
-            logger.error(f"Error reading config at {config_file}: {e}. Using defaults.")
+            logger.error(f"Error reading config at {config_file}: {e}. Using defaults.", exc_info=True)
+            _backup_corrupt_config(config_file)
+            config = AppConfig()
+            save_config(config)
+            return config
+
+        try:
+            return AppConfig(**data)
+        except ValidationError as e:
+            _backup_corrupt_config(config_file)
+            bad = {err["loc"][0] for err in e.errors() if err.get("loc")}
+            logger.error(f"Invalid config values for {sorted(map(str, bad))}; reverting only those to defaults.")
+            cleaned = {k: v for k, v in data.items() if k not in bad}
+            config = AppConfig(**cleaned)
+            save_config(config)
+            return config
 
     config = AppConfig()
     save_config(config)
     return config
 
+
 def save_config(config: AppConfig) -> None:
-    """Persist configuration to file."""
+    """Persist configuration atomically (write temp file, then replace)."""
     config_file = get_config_path()
     config_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(config_file, "w", encoding="utf-8") as f:
+    tmp_file = config_file.with_name(config_file.name + ".tmp")
+    with open(tmp_file, "w", encoding="utf-8") as f:
         json.dump(config.model_dump(), f, indent=2)
+    os.replace(tmp_file, config_file)

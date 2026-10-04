@@ -19,7 +19,7 @@ def main():
         description="CineTag - Local-first video understanding & metadata tool"
     )
     parser.add_argument("path", nargs="?", help="Optional video folder path to process via CLI")
-    parser.add_argument("--host", default=None, help="Host to bind server (default: from config or 0.0.0.0)")
+    parser.add_argument("--host", default=None, help="Host to bind server (default: from config or 127.0.0.1; use 0.0.0.0 for LAN access, which requires an access token)")
     parser.add_argument("--port", type=int, default=None, help="Port for server (default: from config or 5555)")
     parser.add_argument("--portable", action="store_true", help="Force portable mode (stores all data in ./data)")
     parser.add_argument("--cli", action="store_true", help="Run directly in CLI mode instead of web server")
@@ -80,7 +80,22 @@ def main():
     # Web Dashboard Mode (Default)
     host = args.host or config.host
     port = args.port or config.port
-    print(f"\n🚀 Starting Web Dashboard at: http://{host}:{port}")
+
+    # Tell the app which interface it is bound to so it can enforce the access token for LAN use.
+    import os
+    os.environ["CINETAG_BIND_HOST"] = host
+    from src.core.config import is_loopback_host
+
+    shown_host = "localhost" if is_loopback_host(host) else host
+    print(f"\n🚀 Starting Web Dashboard at: http://{shown_host}:{port}")
+    if is_loopback_host(host):
+        print("🔒 Listening on this computer only. Use --host 0.0.0.0 (or set 'host' in config) to allow LAN access.")
+    else:
+        from src.server.app import app as _app
+        token = _app.state.access_token
+        print("🌐 LAN access enabled — an access token is required.")
+        print(f"   Token: {token}")
+        print(f"   One-click login URL: http://<this-computer-ip>:{port}/?token={token}")
     print("Open this URL in your web browser to manage footage.\n")
 
     uvicorn.run("src.server.app:app", host=host, port=port, reload=False)

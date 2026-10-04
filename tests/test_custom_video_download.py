@@ -163,13 +163,14 @@ def test_update_video_objects_endpoint(tmp_path, monkeypatch):
     assert "<rdf:li>Object:tennis racket</rdf:li>" in updated_xmp
 
 
-def test_custom_download_extracts_tags_without_error(tmp_path):
+def test_custom_download_extracts_tags_without_error(tmp_path, allow_path):
     """
     Ensure POST /api/download/custom-video extracts all tags, people, and objects
     from .info.json without NameError and passes metadata_tags to FFmpeg.
     """
     vid_file = tmp_path / "#test_video.webm"
     vid_file.write_bytes(b"webm_dummy")
+    allow_path(vid_file)
 
     info_json = tmp_path / "#test_video.info.json"
     info_json.write_text(json.dumps({
