@@ -93,9 +93,12 @@ def main():
     else:
         from src.server.app import app as _app
         token = _app.state.access_token
-        print("🌐 LAN access enabled — an access token is required.")
-        print(f"   Token: {token}")
-        print(f"   One-click login URL: http://<this-computer-ip>:{port}/?token={token}")
+        if token:
+            print("🌐 LAN access enabled — an access token is required.")
+            print(f"   Token: {token}")
+            print(f"   One-click login URL: http://<this-computer-ip>:{port}/?token={token}")
+        else:
+            print("🌐 LAN access enabled (no access token required).")
     print("Open this URL in your web browser to manage footage.\n")
 
     uvicorn.run("src.server.app:app", host=host, port=port, reload=False)

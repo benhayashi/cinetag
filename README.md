@@ -205,7 +205,7 @@ If you prefer cloud models or don't have a local GPU, CineTag optionally support
 ## 🔒 Network Access & Security
 
 - **Native installs bind to `127.0.0.1` by default** (only reachable from the same machine). To use CineTag from other devices, run `python app.py --host 0.0.0.0` (or set `host` in `config.json`).
-- **LAN mode requires an access token.** When the bind address is not loopback, a token is read from `CINETAG_TOKEN`, then `config.json` (`access_token`), otherwise auto-generated and saved. It is printed at startup (Docker: `docker logs <container>`); open `http://<server>:5555/?token=<token>` once to sign the browser in.
+- **LAN access token (currently disabled by default; set `CINETAG_REQUIRE_TOKEN=1` to enable).** When the bind address is not loopback, a token is read from `CINETAG_TOKEN`, then `config.json` (`access_token`), otherwise auto-generated and saved. It is printed at startup (Docker: `docker logs <container>`); open `http://<server>:5555/?token=<token>` once to sign the browser in.
 - **Docker** keeps `0.0.0.0` inside the container, so the token applies there too. Set `CINETAG_TOKEN` in your compose file for a fixed value.
 - API keys are masked (`********`) in the UI/API and omitted from config exports unless `?include_secrets=true`.
 - File downloads are limited to uploads and files currently in the queue.

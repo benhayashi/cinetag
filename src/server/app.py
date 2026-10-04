@@ -54,6 +54,9 @@ def resolve_access_token(bind_host: str) -> str:
     (bind host is not loopback). It comes from CINETAG_TOKEN, else the config, else
     it is generated once and persisted so the user can find it in config.json.
     """
+    # LAN access token is DISABLED for now. Set CINETAG_REQUIRE_TOKEN=1 to re-enable.
+    if os.environ.get("CINETAG_REQUIRE_TOKEN", "").strip().lower() not in ("1", "true", "yes"):
+        return ""
     if is_loopback_host(bind_host):
         return os.environ.get("CINETAG_TOKEN", "").strip()
     token = os.environ.get("CINETAG_TOKEN", "").strip()
