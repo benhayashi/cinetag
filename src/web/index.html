@@ -220,7 +220,7 @@
                 </button>
               </div>
             </div>
-            <textarea id="queue-prompt-guidance" class="form-control" rows="2" style="width: 100%; min-width: 100%; max-width: 100%; box-sizing: border-box; display: block; font-size: 0.85rem; resize: vertical; min-height: 60px;" placeholder="e.g. Vacation to Banff, Alberta. Look for Lake Louise, hiking trails, mountains, Ben (wearing blue jacket), Sarah. Note wildlife or weather."></textarea>
+            <textarea id="queue-prompt-guidance" class="form-control" rows="2" style="width: 100%; min-width: 100%; max-width: 100%; box-sizing: border-box; display: block; font-size: 0.85rem; resize: vertical; min-height: 60px;" placeholder="e.g. Vacation to Lake Tahoe. Look for hiking trails, scenic viewpoints, Dad (wearing blue jacket), Alex, Sarah. Note wildlife or weather."></textarea>
             <div class="guidance-presets-bar">
               <div class="guidance-presets-list">
                 <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">Quick Presets:</span>
@@ -753,7 +753,7 @@
               <div class="form-group">
                 <label for="cfg-ollama-url">Ollama Host URL</label>
                 <input type="text" id="cfg-ollama-url" class="form-control" value="http://localhost:11434">
-                <small class="helper-text">To use a networked GPU PC or Unraid server, enter its IP (e.g., http://192.168.1.100:11434)</small>
+                <small class="helper-text">To connect to a separate GPU PC, NAS, or homelab server, enter its IP/hostname (e.g., http://192.168.1.100:11434 or http://gpu-server.local:11434)</small>
               </div>
               <div class="form-group">
                 <label for="cfg-ollama-model">Vision Model</label>
@@ -1013,7 +1013,7 @@
           <hr class="divider">
 
           <h3>🎙️ Audio Speech-to-Text (Whisper)</h3>
-          <p class="card-desc">Transcribe dialogue to enrich AI descriptions and automatically export <code>.srt</code> subtitle sidecars. Choose local processing or connect to a remote OpenAI-compatible Whisper server (e.g. TrueNAS SCALE, Docker, vLLM, LocalAI).</p>
+          <p class="card-desc">Transcribe dialogue to enrich AI descriptions and automatically export <code>.srt</code> subtitle sidecars. Choose local processing or connect to a remote OpenAI-compatible Whisper server (e.g. Docker, unRAID, TrueNAS, Proxmox, Synology, LocalAI, vLLM).</p>
           
           <div class="mt-2">
             <label class="checkbox-label">
@@ -1034,7 +1034,7 @@
               <label for="cfg-whisper-backend">Whisper Execution Engine</label>
               <select id="cfg-whisper-backend" class="form-control">
                 <option value="faster-whisper">Local Built-in (faster-whisper - offline CPU/GPU)</option>
-                <option value="remote">Remote Server (OpenAI-Compatible / TrueNAS SCALE / Docker)</option>
+                <option value="remote">Remote Server (OpenAI-Compatible / Docker / Homelab NAS)</option>
                 <option value="openai-whisper">Standard OpenAI Whisper (python library)</option>
               </select>
             </div>
@@ -1052,13 +1052,13 @@
               <span class="badge" style="background: var(--primary); font-size: 0.75rem;">OpenAI Compatible</span>
             </div>
             <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 0.75rem;">
-              Connects to <code>/v1/audio/transcriptions</code> and <code>/v1/models</code> on your local network (e.g., TrueNAS SCALE with <code>hwdsl2/whisper-server</code> or <code>whisper-asr-webservice</code>).
+              Connects to <code>/v1/audio/transcriptions</code> or <code>/asr</code> on any networked home server or Docker container (e.g., speaches, faster-whisper-server, whisper-asr-webservice).
             </p>
 
             <div class="form-grid">
               <div class="form-group" style="grid-column: span 2;">
                 <label for="cfg-whisper-remote-url" style="font-weight: 600;">Server Address & Port</label>
-                <input type="text" id="cfg-whisper-remote-url" class="form-control" placeholder="http://192.168.1.100:9000 (or http://truenas:9000/v1)">
+                <input type="text" id="cfg-whisper-remote-url" class="form-control" placeholder="http://192.168.1.100:9000 (or http://nas-server:9000/v1)">
                 <small class="text-muted" style="font-size: 0.75rem;">Base URL with port. The app automatically targets <code>/v1/audio/transcriptions</code>.</small>
               </div>
 

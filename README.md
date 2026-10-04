@@ -5,49 +5,68 @@
 [![Docker Ready](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)
 [![Local & Private](https://img.shields.io/badge/Privacy-100%25%20Offline%20First-success.svg)](#-privacy--local-first-design)
 
-> **Local-first video understanding, automatic sidecar metadata generation, speech transcription, facial indexing, and safe media library organization.**
+> **Private, local-first media intelligence dashboard: automated video description, speech transcription, facial indexing, sidecar metadata generation, and safe home video organization.**
 
-**CineTag** is an open-source, private media intelligence dashboard built specifically for family archives, GoPro clips, phone recordings, and large home video collections. It combines visual reasoning from local Vision-Language Models (via **Ollama** or **LM Studio**) with speech transcription via **Whisper** (built-in or remote Whisper servers on TrueNAS / LAN) and local **Face Recognition** to understand, describe, tag, and organize video clips — keeping 100% of your private memories offline.
+**CineTag** is an open-source, private media intelligence dashboard built specifically for family archives, GoPro / action camera clips, phone recordings, and large home video collections. It combines visual reasoning from local Vision-Language Models (via **Ollama**, **LM Studio**, **LocalAI**, **vLLM**, or any OpenAI-compatible server) with speech transcription via **Whisper** (embedded local faster-whisper or networked Whisper servers across any home server, NAS, or homelab) and local **Face Recognition** to understand, describe, tag, and organize video clips — keeping 100% of your private memories offline.
 
 ---
 
 ## 🌟 Key Features
 
-- **🔒 100% Local-First & Private**: Works out of the box with local Ollama models (e.g., `qwen2.5-coder`, `llama3.2-vision`, `qwen2.5vl`, `minicpm-v`) and local Whisper. No mandatory cloud accounts or external subscriptions.
+- **🔒 100% Local-First & Private**: Works completely offline with local Vision models (e.g., `qwen2.5vl`, `llama3.2-vision`, `minicpm-v`) and local Whisper. Zero telemetry, no external accounts required, and no data leaves your network.
 - **📁 Dual Intake Workflows**:
-  - **Mode A (In-Place on Host)**: Drag & drop local folders or video clips directly into the browser, or use the native host file/folder picker. Media is processed directly on your storage with **zero file duplication**.
-  - **Mode B (Remote Upload / LAN)**: Access the dashboard from any computer, tablet, or phone on your local network. Drag & drop clips to stage them, process them, and download generated sidecars or tagged videos.
+  - **Mode A (In-Place on Host / Direct NAS Mount)**: Drag & drop local folders or video clips directly into the browser, or use the native host file picker. Media is processed directly on your storage or mounted network share with **zero duplicate file writes**.
+  - **Mode B (Remote Upload / LAN Access)**: Access the dashboard from any computer, tablet, or phone on your local network. Drag & drop clips to stage them, process them, and download generated sidecars or tagged videos.
 - **🎙️ Speech Transcription & Subtitles**:
-  - Integrated local **faster-whisper** (`tiny` up to `large-v3`).
-  - Native support for **Remote Whisper APIs** (such as `hwds12/whisper-server` or `speaches` on **TrueNAS SCALE** or unRAID).
-  - Automatically exports full-dialogue `.srt` subtitle sidecars.
+  - **Built-in Local Whisper**: Embedded `faster-whisper` (`tiny` up to `large-v3`) running locally on CPU or GPU.
+  - **Networked Remote Whisper APIs**: Connect to any OpenAI-compatible Whisper server or container on your LAN (e.g., `speaches`, `faster-whisper-server`, `whisper-asr-webservice`, or LocalAI).
+  - Automatically exports full-dialogue `.srt` subtitle sidecars for immediate playback.
+  - Optional automatic spoken language translation to English.
 - **👤 Facial Indexing & Person Tagging**:
-  - Automatically extracts and clusters faces across clips.
-  - Name family members once; future clips automatically detect and tag recognized people.
-  - AI Description Face Guessing: Optionally matches AI visual observations to known faces.
-  - Export and import your face recognition database across machines.
+  - Automatically extracts and clusters faces across clips using local ONNX vision models.
+  - Name individuals once; future clips automatically detect and tag recognized people.
+  - AI Description Face Guessing: Optionally correlates AI visual observations with known faces.
+  - Export and import your face recognition database across machines and backups.
+- **🧠 Smart AI Context & Description Guidance**:
+  - Add batch-specific guidance (e.g., event type, locations, key people to look for).
+  - Automatically handles high-context video prompts with intelligent context window management (`num_ctx = 16384` default) and self-healing automatic retries.
 - **📄 Non-Destructive Standard Sidecars**:
   - `video.mp4.txt`: Timestamped narrative summary with starred key moments (★).
-  - `video.srt`: Synchronized subtitle sidecar for immediate playback in VLC, Plex, or Jellyfin.
+  - `video.srt`: Synchronized subtitle sidecar for immediate playback in VLC, Plex, Jellyfin, or Emby.
   - `video.info.json`: Comprehensive structured metadata for scripts and cataloging tools.
   - `video.nfo`: Kodi / Jellyfin / Emby compatible movie & home video metadata.
   - `video.xmp`: Standard Adobe XMP sidecar for DigiKam, Darktable, and Adobe Bridge.
   - `video.mp4.edl`: Edit Decision List timeline markers for DaVinci Resolve.
 - **🏷️ Safe Renaming with 1-Click Rollback**:
-  - AI proposes chronological, highly descriptive filenames (e.g., `20150522_Kids_Swimming_Lake_Tahoe.mp4`).
-  - Sidecars are automatically renamed alongside the video.
+  - Proposes chronological, highly descriptive filenames (e.g., `20240518_183000_Kids_Birthday_Party.mp4`).
+  - Automatically renames all accompanying sidecars alongside the video.
   - Every rename is recorded in an undo journal for instant 1-click reversal.
 - **🛡️ Container Tagging with Integrity Verification**:
   - Safely write title, description, and keywords directly into MP4/MOV containers via FFmpeg stream-copy (no quality loss).
-  - Verifies duration and audio/video stream integrity before finalizing, with automatic `.bak` safety backups.
+  - Verifies duration and stream integrity before finalizing, with automatic `.bak` safety backups and cleanup.
 - **⚙️ Machine-Readable Configuration**:
   - Export and import your entire setup as a portable JSON configuration file.
 
 ---
 
-## 🚀 Deployment Options
+## 🖥️ System Architecture & Compatibility
 
-### Option 1: Docker / Docker Compose (Recommended for Servers & NAS)
+CineTag is designed to fit seamlessly into any homelab, home server, or desktop environment:
+
+| Component | Supported Environments & Engines |
+| :--- | :--- |
+| **Host OS** | Linux (Ubuntu, Debian, Arch, Fedora), Windows 10 / 11, macOS |
+| **Home Servers & NAS** | Docker, unRAID, TrueNAS (SCALE / Core), Proxmox VE (LXC or VM), Synology DSM, QNAP, CasaOS, Cosmos, Umbrel, OpenMediaVault, or bare-metal Linux |
+| **Storage Protocols** | Direct NVMe/SSD/HDD, SMB / CIFS, NFS, SSHFS, GVFS / FUSE network mounts |
+| **Vision AI (VLM)** | **Ollama**, **LM Studio**, **LocalAI**, **vLLM**, text-generation-webui, llama.cpp server, or Cloud fallback (Gemini, Claude, OpenAI) |
+| **Speech-to-Text** | Local embedded `faster-whisper`, or remote OpenAI-compatible Whisper (`speaches`, `faster-whisper-server`, `whisper-asr-webservice`) |
+| **Face Recognition** | Local embedded ONNX (YuNet + SFace) or CompreFace |
+
+---
+
+## 🚀 Quick Start & Deployment
+
+### Option 1: Docker / Docker Compose (Recommended for Home Servers & NAS)
 
 The included Docker configuration runs out of the box with FFmpeg pre-installed and volume mappings for persistent configuration and host video storage.
 
@@ -58,9 +77,12 @@ cd cinetag
 ```
 
 #### 2. Configure media paths
-Copy the sample environment file or set `MEDIA_DIR`:
+Set `MEDIA_DIR` to the location of your video library on your host or NAS:
 ```bash
-export MEDIA_DIR="/path/to/your/home/videos"
+export MEDIA_DIR="/path/to/your/videos"
+# e.g., on unRAID:  export MEDIA_DIR="/mnt/user/family_videos"
+# e.g., on TrueNAS: export MEDIA_DIR="/mnt/pool/media/videos"
+# e.g., on Linux:   export MEDIA_DIR="/mnt/nas/videos"
 ```
 
 #### 3. Start the container
@@ -69,9 +91,9 @@ docker compose up -d
 ```
 
 - Open **`http://localhost:5555`** (or `http://your-server-ip:5555`).
-- Video files located in your host media folder will be accessible inside the container at `/media`.
+- Video files in your media folder will be accessible inside the container at `/media`.
 - Application configuration, logs, and face databases persist in `./data`.
-- If your Ollama or LM Studio instance is running on the host machine, point the API URL in Settings to `http://host.docker.internal:11434`.
+- To reach an AI service (Ollama, LM Studio, etc.) running on the host machine from inside Docker, point the API URL in Settings to `http://host.docker.internal:11434`.
 
 ---
 
@@ -93,19 +115,18 @@ cd cinetag
 ```
 `run.sh` automatically creates a Python virtual environment (`.venv`), installs all required dependencies, and starts the server on port 5555.
 
-#### 2. How to Update on Ubuntu
-Whenever a new version is released, update with a single command:
+#### 2. How to Update
 ```bash
 ./update.sh
 ```
-`update.sh` pulls the latest code from GitHub, applies any new dependency requirements to `.venv`, and preserves all your settings and databases.
+`update.sh` pulls the latest code from GitHub, applies any updated dependencies, and preserves all your settings and databases.
 
 ---
 
 ### Option 3: Windows 10 / 11 (Native)
 
 #### Prerequisites
-1. **Python 3.10+**: Download from [python.org](https://www.python.org/downloads/) (make sure to check **"Add Python to PATH"** during installation).
+1. **Python 3.10+**: Download from [python.org](https://www.python.org/downloads/) (ensure **"Add Python to PATH"** is checked during installation).
 2. **Git for Windows**: Download from [git-scm.com](https://git-scm.com/).
 3. **FFmpeg**: Install quickly using Windows Package Manager:
    ```powershell
@@ -114,19 +135,18 @@ Whenever a new version is released, update with a single command:
    *(Or place `ffmpeg.exe` and `ffprobe.exe` directly inside the `bin/` folder of this project).*
 
 #### 1. Launch
-Simply double-click **`run.bat`** (or open Command Prompt / PowerShell in the folder and run `run.bat`).
+Double-click **`run.bat`** (or open Command Prompt / PowerShell in the folder and run `run.bat`).
 The script automatically sets up the `.venv` virtual environment, installs dependencies, and opens the application.
 
-#### 2. How to Update on Windows
-Simply double-click **`update.bat`**.
-The script runs `git pull`, updates `.venv` packages, and notifies you when the update is complete.
+#### 2. How to Update
+Double-click **`update.bat`**. The script runs `git pull`, updates packages, and notifies you when complete.
 
 ---
 
 ### Option 4: macOS (Native)
 
 #### Prerequisites
-Install FFmpeg using [Homebrew](https://brew.sh/):
+Install dependencies using [Homebrew](https://brew.sh/):
 ```bash
 brew install ffmpeg python git
 ```
@@ -137,25 +157,67 @@ brew install ffmpeg python git
 
 ---
 
-## 🤖 Configuring AI Providers
+## 🤖 Configuring AI & Audio Backends
 
-### Vision Models (Ollama or LM Studio)
-1. Install [Ollama](https://ollama.com/) on your workstation or GPU server:
+CineTag gives you full flexibility to run models locally on your workstation or offload compute to any networked server or homelab GPU host.
+
+### 1. Vision & Multimodal Reasoning (VLM)
+
+#### Ollama (Local or Networked Server)
+1. Install [Ollama](https://ollama.com/) on your local machine or network GPU server.
+2. Pull a vision model:
    ```bash
    ollama pull qwen2.5vl
    # or: ollama pull llama3.2-vision
+   # or: ollama pull minicpm-v
    ```
-2. In the CineTag dashboard, navigate to **Settings ⚙️** -> **AI Provider**.
-3. Set your Ollama server URL (e.g., `http://localhost:11434` or `http://192.168.1.100:11434`).
-4. Click **Test & Refresh Models** and select your model.
+3. In CineTag Settings ⚙️ -> **Vision & Reasoning Backend**:
+   - Provider: **Ollama**
+   - Host URL: `http://localhost:11434` (or `http://your-gpu-server-ip:11434`)
+   - Context Window (`num_ctx`): Default is **16,384 tokens** (recommended for multi-frame video analysis). CineTag automatically scales context up and retries if a video's visual tokens exceed the buffer.
+4. Click **Test & Refresh Models** to verify the connection.
 
-### Speech-to-Text (Whisper)
-- **Built-in Faster-Whisper**: Runs locally on CPU or GPU. Select model sizes (`tiny`, `base`, `small`, `medium`, `large-v3`).
-- **Remote Whisper API (TrueNAS SCALE / Docker / Unraid)**:
-  - If running a Whisper container (like `hwds12/whisper-server`, `speaches`, or an OpenAI-compatible Whisper endpoint):
-  - In **Settings ⚙️**, switch Whisper Provider to **Remote Whisper API**.
-  - Enter your server address (e.g., `http://192.168.1.50:9000/v1`), model name, and optional API key.
-  - Click **Test Connection** to verify connectivity before saving.
+#### OpenAI-Compatible Local Servers (LM Studio, LocalAI, vLLM)
+1. Launch your preferred inference server with a vision model loaded (e.g., LM Studio, LocalAI, vLLM).
+2. In CineTag Settings ⚙️:
+   - Provider: **LM Studio / OpenAI-Compatible**
+   - Server Base URL: `http://localhost:1234/v1` (or `http://your-server-ip:port/v1`)
+   - Model Name: Your loaded model identifier (or click **Test Connection** to auto-detect).
+
+#### Cloud Providers (Optional Fallback)
+If you prefer cloud models or don't have a local GPU, CineTag optionally supports Google Gemini, Anthropic Claude, and OpenAI GPT-4o. Enter your API key under **Cloud Fallback** in Settings.
+
+---
+
+### 2. Speech-to-Text & Subtitles (Whisper)
+
+- **Local Built-in (faster-whisper)**:
+  - Runs 100% locally on CPU or GPU without external servers.
+  - Choose model size from `tiny` to `large-v3` depending on available hardware.
+- **Networked Remote Whisper Server**:
+  - Connect to any OpenAI-compatible Whisper container or service running on your LAN (e.g., `speaches`, `faster-whisper-server`, `whisper-asr-webservice`, or LocalAI).
+  - In Settings ⚙️, select **Remote Server (OpenAI-Compatible / Docker / Homelab NAS)**.
+  - Enter the server address (e.g., `http://192.168.1.100:9000/v1` or `http://nas-server:9000`).
+  - Click **⚡ Test Connection & Fetch Models** to verify reachability.
+
+---
+
+## 📁 Network Shares & NAS Storage Workflows
+
+When your video archive resides on a Network Attached Storage (NAS) or file server:
+
+### Direct Network Mounts (Mode A - Recommended)
+1. Mount your network share (SMB/CIFS or NFS) to your local file system:
+   - **Linux**: Mount via `/etc/fstab` or file manager (e.g. `/mnt/nas/videos`).
+   - **Windows**: Map network drive to a drive letter (e.g. `Z:\Videos`).
+   - **macOS**: Connect to server via Finder (`smb://nas-server/videos`).
+2. In CineTag, simply select or drag-and-drop the mounted directory into Mode A.
+3. CineTag reads files directly, creates sidecars adjacent to each video, and performs direct metadata updates with **zero network duplication**.
+
+### Remote Web Intake (Mode B)
+If you run CineTag as a central headless Docker container on your server:
+1. Map your video share directly into the container via `docker-compose.yml` (`MEDIA_DIR`).
+2. Users anywhere on the home network can access the dashboard via browser, upload videos to the staging queue, process them, and download generated sidecars or tagged media.
 
 ---
 

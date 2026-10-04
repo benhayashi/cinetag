@@ -18,14 +18,14 @@ def test_normalize_whisper_urls():
     assert b1 == "http://192.168.1.100:9000"
 
     # 2. URL ending in /v1
-    t2, b2 = normalize_whisper_urls("http://truenas:9000/v1")
-    assert t2 == "http://truenas:9000/v1/audio/transcriptions"
-    assert b2 == "http://truenas:9000"
+    t2, b2 = normalize_whisper_urls("http://nas-server:9000/v1")
+    assert t2 == "http://nas-server:9000/v1/audio/transcriptions"
+    assert b2 == "http://nas-server:9000"
 
     # 3. Full /v1/audio/transcriptions endpoint
-    t3, b3 = normalize_whisper_urls("http://truenas:9000/v1/audio/transcriptions")
-    assert t3 == "http://truenas:9000/v1/audio/transcriptions"
-    assert b3 == "http://truenas:9000"
+    t3, b3 = normalize_whisper_urls("http://nas-server:9000/v1/audio/transcriptions")
+    assert t3 == "http://nas-server:9000/v1/audio/transcriptions"
+    assert b3 == "http://nas-server:9000"
 
     # 4. Custom endpoint like /inference
     t4, b4 = normalize_whisper_urls("http://localhost:8080/inference")
@@ -56,17 +56,17 @@ def test_whisper_remote_transcription(tmp_path):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
-        "text": "Hello TrueNAS Whisper",
+        "text": "Hello Network Whisper",
         "segments": [
-            {"start": 0.0, "end": 1.5, "text": "Hello TrueNAS Whisper"}
+            {"start": 0.0, "end": 1.5, "text": "Hello Network Whisper"}
         ]
     }
 
     with patch("httpx.Client.post", return_value=mock_resp) as mock_post:
         res = svc.transcribe_detailed(wav_file)
-        assert res["text"] == "Hello TrueNAS Whisper"
+        assert res["text"] == "Hello Network Whisper"
         assert len(res["segments"]) == 1
-        assert res["segments"][0]["text"] == "Hello TrueNAS Whisper"
+        assert res["segments"][0]["text"] == "Hello Network Whisper"
         assert res["segments"][0]["start"] == 0.0
 
         # Check call arguments
@@ -131,14 +131,14 @@ def test_config_whisper_persistence(tmp_path, monkeypatch):
 
     cfg = load_config()
     cfg.whisper_backend = "remote"
-    cfg.whisper_remote_url = "http://truenas.local:9000"
+    cfg.whisper_remote_url = "http://nas.local:9000"
     cfg.whisper_api_key = "test-key"
     cfg.whisper_model = "Systran/faster-whisper-large-v3"
     save_config(cfg)
 
     loaded = load_config()
     assert loaded.whisper_backend == "remote"
-    assert loaded.whisper_remote_url == "http://truenas.local:9000"
+    assert loaded.whisper_remote_url == "http://nas.local:9000"
     assert loaded.whisper_api_key == "test-key"
     assert loaded.whisper_model == "Systran/faster-whisper-large-v3"
 
@@ -382,12 +382,12 @@ def test_normalize_whisper_urls_translation():
     assert t1 == "http://192.168.1.100:9000/v1/audio/translations"
     assert b1 == "http://192.168.1.100:9000"
 
-    t2, b2 = normalize_whisper_urls("http://truenas:9000/v1", task="translate")
-    assert t2 == "http://truenas:9000/v1/audio/translations"
-    assert b2 == "http://truenas:9000"
+    t2, b2 = normalize_whisper_urls("http://nas-server:9000/v1", task="translate")
+    assert t2 == "http://nas-server:9000/v1/audio/translations"
+    assert b2 == "http://nas-server:9000"
 
-    t3, b3 = normalize_whisper_urls("http://truenas:9000/v1/audio/transcriptions", task="translate")
-    assert t3 == "http://truenas:9000/v1/audio/translations"
+    t3, b3 = normalize_whisper_urls("http://nas-server:9000/v1/audio/transcriptions", task="translate")
+    assert t3 == "http://nas-server:9000/v1/audio/translations"
 
 
 def test_whisper_remote_translation(tmp_path):

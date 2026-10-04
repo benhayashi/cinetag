@@ -14,7 +14,7 @@ def normalize_whisper_urls(url: str, task: str = "transcribe") -> tuple[str, str
     Examples:
       'http://192.168.1.100:9000' -> ('http://192.168.1.100:9000/v1/audio/transcriptions', 'http://192.168.1.100:9000')
       'http://192.168.1.100:9000' with task='translate' -> ('http://192.168.1.100:9000/v1/audio/translations', 'http://192.168.1.100:9000')
-      'http://truenas:9000/v1'   -> ('http://truenas:9000/v1/audio/transcriptions', 'http://truenas:9000')
+      'http://nas-server:9000/v1' -> ('http://nas-server:9000/v1/audio/transcriptions', 'http://nas-server:9000')
     """
     if not url:
         return "", ""
@@ -583,7 +583,7 @@ class WhisperTranscriptionService:
                     last_err = e1
 
                 # Strategy 2: If /v1/audio/transcriptions returned 404 or failed, try ASR WebService (/asr)
-                # (Standard on TrueNAS Scale / Docker containers like ahmetoner/whisper-asr-webservice)
+                # (Standard on Docker / homelab NAS containers like ahmetoner/whisper-asr-webservice)
                 if res is None:
                     asr_url = f"{base_url}/asr"
                     asr_params = {"task": self.task, "output": "json"}
