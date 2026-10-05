@@ -200,8 +200,8 @@ def sidecar_names_for(video_path: Path) -> List[str]:
     """Exact sidecar file names associated with a video."""
     name, stem = video_path.name, video_path.stem
     return [
-        f"{name}.txt", f"{stem}.info.json", f"{name}.info.json", f"{stem}.xmp",
-        f"{stem}.nfo", f"{name}.edl", f"{stem}.srt", f"{name}.srt",
+        f"{stem}.txt", f"{name}.txt", f"{stem}.info.json", f"{name}.info.json", f"{stem}.xmp",
+        f"{stem}.nfo", f"{stem}.edl", f"{name}.edl", f"{stem}.srt", f"{name}.srt",
         f"{stem}.en.srt", f"{stem}.eng.srt",
     ]
 
@@ -1469,7 +1469,7 @@ def preview_rename(req: Union[RenamePreviewRequest, List[str]]):
                 pass
 
         if not sidecar_json:
-            txt_candidates = [parent / f"{name}.txt", parent / f"{stem}.txt"]
+            txt_candidates = [parent / f"{stem}.txt", parent / f"{name}.txt"]
             txt_p = next((f for f in txt_candidates if f.exists()), None)
             if txt_p:
                 try:
@@ -1971,11 +1971,13 @@ def list_uploaded_files():
     for p in uploads_dir.iterdir():
         if is_video_file(p):
             stat = p.stat()
-            txt_p = p.parent / f"{p.name}.txt"
+            txt_cand = [p.parent / f"{p.stem}.txt", p.parent / f"{p.name}.txt"]
+            txt_p = next((f for f in txt_cand if f.exists()), txt_cand[0])
             json_p = p.parent / f"{p.stem}.info.json"
             xmp_p = p.parent / f"{p.stem}.xmp"
             nfo_p = p.parent / f"{p.stem}.nfo"
-            edl_p = p.parent / f"{p.name}.edl"
+            edl_cand = [p.parent / f"{p.stem}.edl", p.parent / f"{p.name}.edl"]
+            edl_p = next((f for f in edl_cand if f.exists()), edl_cand[0])
             acc_srt = find_accompanying_srt(p)
 
             task = task_map.get(str(p.resolve()))
@@ -2318,7 +2320,7 @@ def get_video_results(file_path: str):
     json_candidates = [parent / f"{stem}.info.json", parent / f"{name}.info.json"]
     json_p = next((f for f in json_candidates if f.exists()), None)
 
-    txt_candidates = [parent / f"{name}.txt", parent / f"{stem}.txt"]
+    txt_candidates = [parent / f"{stem}.txt", parent / f"{name}.txt"]
     txt_p = next((f for f in txt_candidates if f.exists()), None)
 
     xmp_candidates = [parent / f"{stem}.xmp", parent / f"{name}.xmp"]

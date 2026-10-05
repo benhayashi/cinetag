@@ -172,7 +172,7 @@ def test_queue_manager_exports_txt_and_srt_without_speech(tmp_path: Path, monkey
 
     assert task.status == "completed"
 
-    txt_file = tmp_path / "silent_home_movie.mp4.txt"
+    txt_file = tmp_path / "silent_home_movie.txt"
     srt_file = tmp_path / "silent_home_movie.srt"
 
     assert txt_file.exists(), "Text sidecar should be created"
@@ -239,7 +239,7 @@ def test_queue_manager_skips_visual_srt_when_disabled(tmp_path: Path, monkeypatc
 
     assert task.status == "completed"
 
-    txt_file = tmp_path / "silent_home_movie_2.mp4.txt"
+    txt_file = tmp_path / "silent_home_movie_2.txt"
     srt_file = tmp_path / "silent_home_movie_2.srt"
 
     assert txt_file.exists(), "Text sidecar should be created"

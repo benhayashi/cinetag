@@ -58,7 +58,7 @@ def write_txt_sidecar(
     provider: ...
     model: ...
     """
-    base_path = video_path.parent / f"{video_path.name}.txt"
+    base_path = video_path.parent / f"{video_path.stem}.txt"
     out_path = resolve_sidecar_path(base_path, conflict_mode)
     lines = []
 

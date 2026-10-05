@@ -220,5 +220,29 @@ def test_execute_rename_syncs_info_json_metadata(tmp_path):
     assert data["file"]["name"] == "new_clip.mp4"
     assert data["file"]["metadata"]["creation_time"] == "2015-05-22T23:09:49"
 
+def test_execute_rename_with_stem_txt_sidecar(tmp_path, monkeypatch):
+    from pathlib import Path
+    from src.media.renamer import execute_rename, undo_last_rename
+    monkeypatch.setenv('VIDEO_DESCRIBER_DATA_DIR', str(tmp_path))
 
+    video = tmp_path / 'home_movie.mp4'
+    video.write_text('dummy video')
+    sidecar = tmp_path / 'home_movie.txt'
+    sidecar.write_text('home movie description')
+
+    res = execute_rename(video, '2024-07-15_party.mp4')
+    assert res['status'] == 'success'
+    new_video = Path(res['renamed_to'])
+    assert new_video.exists()
+    assert not video.exists()
+
+    new_sidecar = tmp_path / '2024-07-15_party.txt'
+    assert new_sidecar.exists()
+    assert not sidecar.exists()
+
+    undo_res = undo_last_rename()
+    assert undo_res is not None
+    assert video.exists()
+    assert sidecar.exists()
+    assert not new_sidecar.exists()
 

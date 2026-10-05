@@ -66,20 +66,20 @@ def test_sidecar_conflict_resolution(tmp_path):
 
     # First write creates normal files
     txt1 = write_txt_sidecar(video, analysis, conflict_mode="overwrite")
-    assert txt1.name == "clip.mp4.txt"
+    assert txt1.name == "clip.txt"
     json1 = write_info_json_sidecar(video, analysis, conflict_mode="overwrite")
     assert json1.name == "clip.info.json"
 
     # Second write with overwrite replaces existing
     analysis.title = "Overwritten Run"
     txt2 = write_txt_sidecar(video, analysis, conflict_mode="overwrite")
-    assert txt2.name == "clip.mp4.txt"
+    assert txt2.name == "clip.txt"
     assert "Overwritten Run" in txt2.read_text(encoding="utf-8")
 
     # Third write with enumerate creates _01
     analysis.title = "Enumerated Run 1"
     txt3 = write_txt_sidecar(video, analysis, conflict_mode="enumerate")
-    assert txt3.name == "clip_01.mp4.txt"
+    assert txt3.name == "clip_01.txt"
     assert txt3.exists()
 
     json3 = write_info_json_sidecar(video, analysis, conflict_mode="enumerate")
