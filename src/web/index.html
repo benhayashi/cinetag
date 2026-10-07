@@ -676,59 +676,30 @@
 
       <!-- TAB 3: AI CONNECTORS & SYSTEM -->
       <section id="tab-connectors" class="tab-pane">
-        
-        <!-- FFmpeg & Video Engine Card -->
-        <div class="card" id="card-ffmpeg-management">
-          <div class="card-header">
-            <h2>🎬 FFmpeg & Media Processing Engine</h2>
-            <p class="card-desc">Required for video frame sampling, audio extraction, and container tagging. Automatically detected on your system path.</p>
-          </div>
 
-          <div class="ffmpeg-status-grid mt-2">
-            <div class="stat-card">
-              <span class="stat-name">FFmpeg Binary:</span>
-              <div class="flex-between mt-1">
-                <span id="ffmpeg-detected-status" class="badge-tag checking">Checking...</span>
-                <code id="ffmpeg-detected-path" style="font-size:0.75rem; color:#94a3b8;"></code>
-              </div>
-            </div>
-            <div class="stat-card">
-              <span class="stat-name">FFprobe Binary:</span>
-              <div class="flex-between mt-1">
-                <span id="ffprobe-detected-status" class="badge-tag checking">Checking...</span>
-                <code id="ffprobe-detected-path" style="font-size:0.75rem; color:#94a3b8;"></code>
-              </div>
-            </div>
+        <!-- Sticky Settings Sub-Navigation & Quick Action Bar -->
+        <div class="settings-sticky-header">
+          <div class="settings-subnav" id="settings-subnav-list">
+            <button type="button" class="settings-subnav-btn active" data-target="card-settings-vision">🤖 Vision & Prompts</button>
+            <button type="button" class="settings-subnav-btn" data-target="card-settings-audio">🎙️ Audio & Subtitles</button>
+            <button type="button" class="settings-subnav-btn" data-target="card-settings-sampling">⏱️ Timeline & Sampling</button>
+            <button type="button" class="settings-subnav-btn" data-target="card-settings-naming">🏷️ Naming & Sidecars</button>
+            <button type="button" class="settings-subnav-btn" data-target="card-settings-system">🛠️ Hardware & Engines</button>
           </div>
-
-          <div class="mt-3">
-            <details class="advanced-paths">
-              <summary style="cursor:pointer; color:#38bdf8; font-size:0.85rem; font-weight:600;">
-                ⚙️ Manually locate / specify binary paths on host system
-              </summary>
-              <div class="form-grid mt-2">
-                <div class="form-group">
-                  <label for="cfg-ffmpeg-path">Custom FFmpeg Path</label>
-                  <input type="text" id="cfg-ffmpeg-path" class="form-control" placeholder="/usr/bin/ffmpeg or C:\tools\ffmpeg.exe">
-                </div>
-                <div class="form-group">
-                  <label for="cfg-ffprobe-path">Custom FFprobe Path</label>
-                  <input type="text" id="cfg-ffprobe-path" class="form-control" placeholder="/usr/bin/ffprobe or C:\tools\ffprobe.exe">
-                </div>
-              </div>
-              <div class="mt-2 flex-between">
-                <button id="btn-verify-ffmpeg-paths" class="btn btn-sm btn-secondary">Test Custom Paths</button>
-                <span id="verify-ffmpeg-result" style="font-size:0.8rem;"></span>
-              </div>
-            </details>
+          <div class="settings-actions-group">
+            <button id="btn-save-config-sticky" type="button" class="btn btn-sm btn-primary">💾 Save Settings</button>
+            <button id="btn-export-config-sticky" type="button" class="btn btn-sm btn-secondary" title="Export settings as JSON">📤 Export</button>
+            <button id="btn-import-config-sticky" type="button" class="btn btn-sm btn-secondary" title="Import settings from JSON">📥 Import</button>
+            <span id="save-config-status-sticky" class="success-text hidden" style="font-size:0.8rem; font-weight:600;">✓ Saved</span>
           </div>
         </div>
 
-        <div class="card">
+        <!-- 1. VISION & PROMPTS CARD -->
+        <div class="card settings-section-card" id="card-settings-vision">
           <div class="card-header flex-between">
             <div>
-              <h2>🤖 Vision & Reasoning Backend</h2>
-              <p class="card-desc">Run on-device or offload heavy processing to a networked server (Ollama or LM Studio).</p>
+              <h2>🤖 Vision Model & Reasoning Backend</h2>
+              <p class="card-desc">Run on-device or offload heavy video frame processing to a networked server (Ollama, LM Studio, or Cloud).</p>
             </div>
             <div id="backend-live-status-pill" class="badge-tag checking">Checking Backend...</div>
           </div>
@@ -810,7 +781,7 @@
               </div>
             </div>
 
-            <!-- Cloud Provider Section (OpenAI Standards, Gemini, Claude, OpenRouter, Custom) -->
+            <!-- Cloud Provider Section -->
             <div id="section-cloud" class="provider-section hidden">
               <div class="form-group">
                 <label for="cfg-cloud-provider">Cloud Provider Standard</label>
@@ -870,14 +841,14 @@
               </div>
             </div>
             <small class="helper-text mt-1" style="display: block; font-size: 0.78rem; line-height: 1.4;">
-              Maximum time allowed for a single vision inference request (Default: <b>600s = 10 minutes</b>). Prevents premature <code>500 Server Error</code> cutoffs on large models (e.g. 14B, 27B, 32B) or videos with dense visual token contexts.
+              Maximum time allowed for a single vision inference request (Default: <b>600s = 10 minutes</b>). Prevents premature <code>500 Server Error</code> cutoffs on large models or videos with dense visual token contexts.
             </small>
           </div>
 
           <hr class="divider">
 
-          <h3>🧠 AI System Prompt & Description Guidance</h3>
-          <p class="card-desc">Customize how Vision models analyze footage. Provide permanent archive guidance or modify the master system prompt used across Ollama, LM Studio, and Cloud backends.</p>
+          <h3>🧠 System Prompt & Description Guidance</h3>
+          <p class="card-desc">Customize how Vision models analyze footage. Provide permanent archive guidance or modify the master system prompt used across backends.</p>
 
           <div class="form-group mt-2">
             <label for="cfg-default-prompt-guidance" style="font-weight: 600;">Default Description Guidance & Archive Context (Permanent Addendum)</label>
@@ -931,98 +902,15 @@
               </div>
             </div>
           </details>
+        </div>
 
-          <hr class="divider">
-
-          <h3>⚡ Pipeline Concurrency & Execution Mode</h3>
-          <p class="card-desc">Prevent hardware overload by executing stages in serial order, or run audio and frames in parallel when backends are independent.</p>
-          <div class="form-grid mt-2">
-            <div class="form-group">
-              <label for="cfg-pipeline-execution-mode">Extraction & AI Execution Mode</label>
-              <select id="cfg-pipeline-execution-mode" class="form-control">
-                <option value="serial">Serial Processing (Default — Safest for Local Hardware / Low VRAM)</option>
-                <option value="concurrent">Concurrent Processing (Parallel Audio & Frame Extraction)</option>
-              </select>
-              <small class="helper-text">Serial mode ensures Whisper audio extraction and Vision frame reasoning run sequentially, avoiding GPU memory spikes.</small>
-            </div>
+        <!-- 2. AUDIO & SUBTITLES CARD -->
+        <div class="card settings-section-card" id="card-settings-audio">
+          <div class="card-header">
+            <h2>🎙️ Audio Speech-to-Text & Subtitles (Whisper)</h2>
+            <p class="card-desc">Transcribe dialogue to enrich AI descriptions and automatically export <code>.srt</code> subtitle sidecars. Choose local processing or connect to a remote Whisper server.</p>
           </div>
 
-          <hr class="divider">
-
-          <h3>⏱️ Long Video Detail Level & Frame Sampling</h3>
-          <p class="card-desc">Engineered for stability on videos up to several hours long. Choose how densely to sample footage and set frame safety caps to prevent AI context overload.</p>
-          
-          <div class="form-grid mt-2">
-            <div class="form-group">
-              <label for="cfg-sampling-strategy">Sampling Strategy</label>
-              <select id="cfg-sampling-strategy" class="form-control">
-                <option value="interval">⏱️ Time Interval (Sample every N seconds/minutes)</option>
-                <option value="key_moments">🎬 Overall Key Moments (Narrative milestones & scene boundaries)</option>
-              </select>
-              <small class="helper-text">Choose between even time-based intervals or milestone key moments across the footage.</small>
-            </div>
-
-            <div class="form-group" id="grp-sampling-interval">
-              <label for="cfg-sampling-interval">Interval Between Samples</label>
-              <select id="cfg-sampling-interval" class="form-control">
-                <option value="30">Every 30 seconds (High detail / short to medium clips)</option>
-                <option value="60" selected>Every 1 minute (Recommended for 15-60 min videos)</option>
-                <option value="120">Every 2 minutes (Balanced for 1-2 hour videos)</option>
-                <option value="300">Every 5 minutes (Efficient for 2-4 hour videos)</option>
-                <option value="600">Every 10 minutes (Broad overview for very long archives)</option>
-              </select>
-              <small class="helper-text">Frequency of frame extraction across long video timelines.</small>
-            </div>
-          </div>
-
-          <div class="card p-3 mt-2" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px;">
-            <div class="flex-between align-center mb-1">
-              <label for="cfg-max-frames" style="font-weight: 600; color: var(--text-main);">
-                🛡️ Maximum Frame Safety Cap
-              </label>
-              <span id="badge-max-frames" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.9rem; padding: 0.2rem 0.6rem;">30 frames</span>
-            </div>
-            <input type="range" id="cfg-max-frames" class="form-range w-100" min="15" max="60" step="5" value="30" style="width: 100%;">
-            
-            <div class="slider-ticks flex-between mt-1 text-muted" style="font-size: 0.75rem;">
-              <span>15 (Low VRAM / Faster)</span>
-              <span>30 (Balanced Standard)</span>
-              <span>60 (Maximum Detail)</span>
-            </div>
-
-            <div class="helper-box mt-2 p-2" style="background: rgba(30, 41, 59, 0.7); border-radius: 6px; font-size: 0.8rem; line-height: 1.4;">
-              <p><strong>ℹ️ Stability Guarantee:</strong> If a multi-hour video produces more candidate frames than this safety cap, the system automatically applies <em>smart uniform decimation</em>. This ensures the <strong>entire timeline from start to finish is covered</strong> while strictly preventing VLM context overflow and GPU out-of-memory errors.</p>
-            </div>
-          </div>
-
-          <hr class="divider">
-
-          <h3>💬 Subtitle Ingestion & Context</h3>
-          <p class="card-desc">Use preexisting <code>.srt</code> files (dropped together or placed next to video) or embedded subtitle tracks as dialogue context.</p>
-          <div class="checkbox-grid mt-2">
-            <label class="checkbox-label">
-              <input type="checkbox" id="cfg-use-subtitles" checked>
-              <b>Use Preexisting / Embedded Subtitles as Context</b>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="cfg-prefer-subtitles" checked>
-              <span>Prefer Subtitles over Whisper (Saves transcription time if subtitles found)</span>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="cfg-full-transcription-fallback" checked>
-              <span>Full Transcription Fallback (Run Whisper if no subtitles are found)</span>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="cfg-synthesize-visual-subtitles">
-              <span><b>Devise visual subtitles from vision analysis</b> when no audio or speech is found (Disabled by default)</span>
-            </label>
-          </div>
-
-          <hr class="divider">
-
-          <h3>🎙️ Audio Speech-to-Text (Whisper)</h3>
-          <p class="card-desc">Transcribe dialogue to enrich AI descriptions and automatically export <code>.srt</code> subtitle sidecars. Choose local processing or connect to a remote OpenAI-compatible Whisper server (e.g. Docker, unRAID, TrueNAS, Proxmox, Synology, LocalAI, vLLM).</p>
-          
           <div class="mt-2">
             <label class="checkbox-label">
               <input type="checkbox" id="cfg-transcribe-audio" checked>
@@ -1093,11 +981,9 @@
             </div>
 
             <div class="flex-between align-center mt-3" style="flex-wrap: wrap; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color);">
-              <div style="display: flex; gap: 0.5rem; align-items: center;">
-                <button type="button" id="btn-test-whisper-remote" class="btn btn-secondary">
-                  ⚡ Test Connection & Fetch Models
-                </button>
-              </div>
+              <button type="button" id="btn-test-whisper-remote" class="btn btn-secondary">
+                ⚡ Test Connection & Fetch Models
+              </button>
               <span id="whisper-remote-test-status" style="font-size: 0.85rem; font-weight: 500;"></span>
             </div>
           </div>
@@ -1165,181 +1051,85 @@
 
           <hr class="divider">
 
-          <h3>👤 Facial Recognition & Person Identification</h3>
-          <p class="card-desc">Identify family members and recurring individuals. Uses built-in local clustering by default or connects to an external CompreFace server.</p>
-
-          <div class="mt-2">
+          <h3>💬 Subtitle Ingestion & Context</h3>
+          <p class="card-desc">Use preexisting <code>.srt</code> files (dropped together or placed next to video) or embedded subtitle tracks as dialogue context.</p>
+          <div class="checkbox-grid mt-2">
             <label class="checkbox-label">
-              <input type="checkbox" id="cfg-face-enabled">
-              <b>Enable Facial Recognition during queue processing</b>
+              <input type="checkbox" id="cfg-use-subtitles" checked>
+              <b>Use Preexisting / Embedded Subtitles as Context</b>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-prefer-subtitles" checked>
+              <span>Prefer Subtitles over Whisper (Saves transcription time if subtitles found)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-full-transcription-fallback" checked>
+              <span>Full Transcription Fallback (Run Whisper if no subtitles are found)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-synthesize-visual-subtitles">
+              <span><b>Devise visual subtitles from vision analysis</b> when no audio or speech is found (Disabled by default)</span>
             </label>
           </div>
+        </div>
 
-          <div id="face-settings-panel" class="mt-2">
-            <div class="form-group">
-              <label for="cfg-face-provider">Recognition Engine</label>
-              <select id="cfg-face-provider" class="form-control">
-                <option value="builtin">Built-in Neural Engine (Offline / Private / YuNet CPU)</option>
-                <option value="compreface">External CompreFace Server (Network REST API)</option>
-              </select>
-            </div>
-
-            <!-- Built-in Neural Face Engine Settings -->
-            <div id="section-builtin-face" class="mt-3">
-              <div class="card p-3 mb-3" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px;">
-                <div class="flex-between align-center mb-1">
-                  <label for="cfg-face-confidence" style="font-weight: 600; color: var(--text-main);">
-                    🎯 Minimum Face Detection Confidence
-                  </label>
-                  <span id="badge-face-confidence" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.9rem; padding: 0.2rem 0.6rem;">0.70</span>
-                </div>
-                <input type="range" id="cfg-face-confidence" class="form-range w-100" min="0.30" max="0.95" step="0.05" value="0.70" style="width: 100%;">
-                
-                <div class="slider-ticks flex-between mt-1 text-muted" style="font-size: 0.75rem;">
-                  <span>0.30 (Permissive)</span>
-                  <span>0.70 (Recommended Default)</span>
-                  <span>0.95 (Ultra-Strict)</span>
-                </div>
-
-                <div class="helper-box mt-2 p-2" style="background: rgba(30, 41, 59, 0.7); border-radius: 6px; font-size: 0.8rem; line-height: 1.4;">
-                  <p><strong>ℹ️ What this controls:</strong> Minimum neural probability required to recognize a shape as an actual human face (rejecting non-face artifacts).</p>
-                  <ul style="margin: 0.3rem 0 0 1.2rem; padding: 0;">
-                    <li><strong>Higher values (0.75 - 0.90):</strong> <em>Recommended to eliminate false positives</em>. Enforces strict verification of eyes, nose, and mouth. Rejects hands, elbows, knees, cloth folds, and textured background patterns.</li>
-                    <li><strong>Lower values (0.30 - 0.60):</strong> Increases sensitivity for distant, blurred, or partially shadowed faces, but may capture false positives.</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div class="card p-3" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px;">
-                <div class="flex-between align-center mb-1">
-                  <label for="cfg-face-distance" style="font-weight: 600; color: var(--text-main);">
-                    👥 Maximum Recognition Distance (Person Coherence)
-                  </label>
-                  <span id="badge-face-distance" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.9rem; padding: 0.2rem 0.6rem;">Distance: 0.45 (Similarity: 0.55)</span>
-                </div>
-                <input type="range" id="cfg-face-distance" class="form-range w-100" min="0.20" max="0.95" step="0.02" value="0.45" style="width: 100%;">
-                
-                <div class="slider-ticks flex-between mt-1 text-muted" style="font-size: 0.75rem;">
-                  <span>0.20 (Strict)</span>
-                  <span>0.45 (Balanced)</span>
-                  <span>0.70 (High Coherence)</span>
-                  <span>0.95 (Ultra-Permissive)</span>
-                </div>
-
-                <div class="helper-box mt-2 p-2" style="background: rgba(30, 41, 59, 0.7); border-radius: 6px; font-size: 0.8rem; line-height: 1.4;">
-                  <p><strong>ℹ️ What this controls:</strong> Clustering tolerance when linking detected faces to person profiles (e.g. <code>Person_01</code>).</p>
-                  <ul style="margin: 0.3rem 0 0 1.2rem; padding: 0;">
-                    <li><strong>Higher Distance (0.50 - 0.95):</strong> <em>Recommended if the same person is split into multiple entries</em>. Clusters varied camera angles, head turns, expressions, smiles, profile views, and lighting changes into a single individual.</li>
-                    <li><strong>Lower Distance (0.20 - 0.40):</strong> <em>Stricter identity separation</em>. Distinguishes very similar-looking siblings or relatives, but may create multiple profiles for the same person if lighting or hairstyle changes.</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <!-- External CompreFace Configuration -->
-            <div id="section-compreface" class="provider-section hidden mt-2">
-              <div class="form-group">
-                <label for="cfg-compreface-url">CompreFace Server URL</label>
-                <input type="text" id="cfg-compreface-url" class="form-control" placeholder="http://192.168.1.100:8000">
-              </div>
-              <div class="form-group">
-                <label for="cfg-compreface-key">API Key (Recognition Service)</label>
-                <div class="input-with-button">
-                  <input type="password" id="cfg-compreface-key" class="form-control" placeholder="00000000-0000-0000-0000-000000000000">
-                  <button id="btn-test-compreface" class="btn btn-secondary">Test Connection</button>
-                </div>
-                <small class="helper-text" id="compreface-test-status"></small>
-              </div>
-            </div>
+        <!-- 3. TIMELINE & FRAME SAMPLING CARD -->
+        <div class="card settings-section-card" id="card-settings-sampling">
+          <div class="card-header">
+            <h2>⏱️ Long Video Detail Level & Frame Sampling</h2>
+            <p class="card-desc">Engineered for stability on videos up to several hours long. Choose how densely to sample footage and set frame safety caps to prevent AI context overload.</p>
           </div>
-
-          <hr class="divider">
-
-          <h3>📄 Sidecar & Metadata Export Standards</h3>
-          <p class="card-desc">Choose which formats and metadata standards to generate for your video player, media server, or DAM organizer.</p>
-
-          <div class="form-group mt-2">
-            <label for="cfg-metadata-preset">Target Media System Preset</label>
-            <select id="cfg-metadata-preset" class="form-control">
-              <option value="all">Universal Archive (All Formats: NFO, XMP, JSON, TXT, SRT, EDL)</option>
-              <option value="jellyfin">Kodi / Jellyfin / Plex Library (NFO + TXT + JSON + SRT)</option>
-              <option value="digikam">DigiKam / Adobe Lightroom (XMP + TXT + JSON + SRT)</option>
-              <option value="custom">Custom Format Selection</option>
-            </select>
-          </div>
-
-          <div class="checkbox-grid mt-2">
-            <label class="checkbox-label"><input type="checkbox" id="cfg-export-nfo" checked> Kodi / Jellyfin / Plex (<code>.nfo</code>)</label>
-            <label class="checkbox-label"><input type="checkbox" id="cfg-export-xmp" checked> Adobe / DigiKam Sidecar (<code>.xmp</code>)</label>
-            <label class="checkbox-label"><input type="checkbox" id="cfg-export-txt" checked> Timestamped Text Summary (<code>.txt</code>)</label>
-            <label class="checkbox-label"><input type="checkbox" id="cfg-export-json" checked> Structured Metadata (<code>.info.json</code>)</label>
-            <label class="checkbox-label"><input type="checkbox" id="cfg-export-srt" checked> Full Subtitles / Dialogue (<code>.srt</code>)</label>
-            <label class="checkbox-label"><input type="checkbox" id="cfg-export-edl"> DaVinci Resolve Timeline Markers (<code>.edl</code>)</label>
-          </div>
-
-          <hr class="divider">
-
-          <h3>🧹 Temporary Frame & Audio Cache Retention</h3>
-          <p class="card-desc">Controls how long sampled video screenshot frames and extracted audio WAV files stay in the cache directory.</p>
+          
           <div class="form-grid mt-2">
             <div class="form-group">
-              <label for="cfg-temp-retention">Retention Policy</label>
-              <select id="cfg-temp-retention" class="form-control">
-                <option value="immediate">Delete immediately after processing clip (Default / Recommended)</option>
-                <option value="1_day">Retain for 1 day (24 hours)</option>
-                <option value="7_days">Retain for 7 days (1 week)</option>
-                <option value="30_days">Retain for 30 days (1 month)</option>
-                <option value="persistent">Keep indefinitely (Persistent cache)</option>
+              <label for="cfg-sampling-strategy">Sampling Strategy</label>
+              <select id="cfg-sampling-strategy" class="form-control">
+                <option value="interval">⏱️ Time Interval (Sample every N seconds/minutes)</option>
+                <option value="key_moments">🎬 Overall Key Moments (Narrative milestones & scene boundaries)</option>
               </select>
-              <small class="helper-text">Immediate deletion automatically frees disk space as soon as each video analysis finishes.</small>
+              <small class="helper-text">Choose between even time-based intervals or milestone key moments across the footage.</small>
+            </div>
+
+            <div class="form-group" id="grp-sampling-interval">
+              <label for="cfg-sampling-interval">Interval Between Samples</label>
+              <select id="cfg-sampling-interval" class="form-control">
+                <option value="30">Every 30 seconds (High detail / short to medium clips)</option>
+                <option value="60" selected>Every 1 minute (Recommended for 15-60 min videos)</option>
+                <option value="120">Every 2 minutes (Balanced for 1-2 hour videos)</option>
+                <option value="300">Every 5 minutes (Efficient for 2-4 hour videos)</option>
+                <option value="600">Every 10 minutes (Broad overview for very long archives)</option>
+              </select>
+              <small class="helper-text">Frequency of frame extraction across long video timelines.</small>
             </div>
           </div>
 
-          <hr class="divider">
+          <div class="card p-3 mt-2" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px;">
+            <div class="flex-between align-center mb-1">
+              <label for="cfg-max-frames" style="font-weight: 600; color: var(--text-main);">
+                🛡️ Maximum Frame Safety Cap
+              </label>
+              <span id="badge-max-frames" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.9rem; padding: 0.2rem 0.6rem;">30 frames</span>
+            </div>
+            <input type="range" id="cfg-max-frames" class="form-range w-100" min="15" max="60" step="5" value="30" style="width: 100%;">
+            
+            <div class="slider-ticks flex-between mt-1 text-muted" style="font-size: 0.75rem;">
+              <span>15 (Low VRAM / Faster)</span>
+              <span>30 (Balanced Standard)</span>
+              <span>60 (Maximum Detail)</span>
+            </div>
 
-          <h3>🏷️ Automated Post-Processing Actions</h3>
-          <p class="card-desc">Automatically rename files and/or apply container metadata tags directly to videos as each queue task finishes.</p>
-          
-          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 0.75rem 1rem; margin-top: 0.5rem; margin-bottom: 0.75rem;">
-            <strong style="color: #34d399;">🛡️ SSD Safety & Direct Renaming Disclaimer:</strong>
-            <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45;">
-              Direct renaming (<code>auto_rename</code>) operates instantly at the filesystem directory index level. It does <b>not</b> copy, re-encode, or rewrite any video data, so it creates <b>0 extra writes on your SSD</b> and has <b>0% risk of stream corruption</b>.
-              In-file container tagging re-muxes the container with FFmpeg to embed tags, which writes duplicate stream data to disk.
-            </p>
+            <div class="helper-box mt-2 p-2" style="background: rgba(30, 41, 59, 0.7); border-radius: 6px; font-size: 0.8rem; line-height: 1.4;">
+              <p><strong>ℹ️ Stability Guarantee:</strong> If a multi-hour video produces more candidate frames than this safety cap, the system automatically applies <em>smart uniform decimation</em>. This ensures the <strong>entire timeline from start to finish is covered</strong> while strictly preventing VLM context overflow and GPU out-of-memory errors.</p>
+            </div>
           </div>
+        </div>
 
-          <div class="checkbox-grid mt-2">
-            <label class="checkbox-label">
-              <input type="checkbox" id="cfg-auto-rename">
-              <b>Auto-rename files upon completion (Zero SSD video writes)</b>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="cfg-auto-tag">
-              <b>Auto-apply container tags upon completion (In-File Metadata)</b>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="cfg-backup-before-tagging" checked>
-              <span>Backup original file before container tagging (<code>.bak</code>)</span>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="cfg-flush-backup-on-success" checked>
-              <span><b>Flush <code>.bak</code> safety file automatically</b> upon verified success</span>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="cfg-verify-tag-integrity" checked>
-              <span>Verify stream integrity before replacing original</span>
-            </label>
+        <!-- 4. NAMING & SIDECAR EXPORTS CARD -->
+        <div class="card settings-section-card" id="card-settings-naming">
+          <div class="card-header">
+            <h2>🏷️ AI Filename Naming Scheme & Sidecar Exports</h2>
+            <p class="card-desc">Choose how AI titles, event information, and dates are formatted into filenames, and configure sidecar metadata files.</p>
           </div>
-
-          <div class="mt-3" style="display: flex; gap: 0.75rem; align-items: center;">
-            <button id="btn-flush-backups" class="btn btn-secondary btn-sm" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);" title="Scan for and delete any leftover .bak backup files across processed folders">🧹 Flush Leftover .bak Files</button>
-            <span id="flush-backups-status" style="font-size: 0.85rem; color: var(--text-muted);"></span>
-          </div>
-
-          <hr class="divider">
-
-          <h3>✨ AI Filename Naming Scheme</h3>
-          <p class="card-desc">Choose how AI titles, event information, and folder/collection context are synthesized into filenames. If a name has previously been used, a zero-padded serialized numerator (<code>_01</code>, <code>_02</code>, etc.) is automatically appended to prevent collisions.</p>
           
           <div class="alert info-alert" style="background: rgba(30,58,138,0.25); border: 1px solid rgba(59,130,246,0.4); border-radius: 8px; padding: 0.75rem 1rem; margin-top: 0.5rem; font-size: 0.85rem; line-height: 1.5;">
             <strong>💡 How AI Naming Works:</strong> When your video is analyzed by the vision model, it generates a concise, descriptive <b>AI Title</b> (e.g. <code>Kids_Birthday_Party</code>) and web-safe <b>AI Slug</b> (e.g. <code>kids_birthday_party</code>). The template combines this title with metadata like the video's recorded creation date.
@@ -1442,6 +1232,244 @@
             </div>
           </div>
 
+          <hr class="divider">
+
+          <h3>📄 Sidecar & Metadata Export Standards</h3>
+          <p class="card-desc">Choose which formats and metadata standards to generate for your video player, media server, or DAM organizer.</p>
+
+          <div class="form-group mt-2">
+            <label for="cfg-metadata-preset">Target Media System Preset</label>
+            <select id="cfg-metadata-preset" class="form-control">
+              <option value="all">Universal Archive (All Formats: NFO, XMP, JSON, TXT, SRT, EDL)</option>
+              <option value="jellyfin">Kodi / Jellyfin / Plex Library (NFO + TXT + JSON + SRT)</option>
+              <option value="digikam">DigiKam / Adobe Lightroom (XMP + TXT + JSON + SRT)</option>
+              <option value="custom">Custom Format Selection</option>
+            </select>
+          </div>
+
+          <div class="checkbox-grid mt-2">
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-nfo" checked> Kodi / Jellyfin / Plex (<code>.nfo</code>)</label>
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-xmp" checked> Adobe / DigiKam Sidecar (<code>.xmp</code>)</label>
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-txt" checked> Timestamped Text Summary (<code>.txt</code>)</label>
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-json" checked> Structured Metadata (<code>.info.json</code>)</label>
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-srt" checked> Full Subtitles / Dialogue (<code>.srt</code>)</label>
+            <label class="checkbox-label"><input type="checkbox" id="cfg-export-edl"> DaVinci Resolve Timeline Markers (<code>.edl</code>)</label>
+          </div>
+
+          <hr class="divider">
+
+          <h3>🏷️ Automated Post-Processing Actions</h3>
+          <p class="card-desc">Automatically rename files and/or apply container metadata tags directly to videos as each queue task finishes.</p>
+          
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 0.75rem 1rem; margin-top: 0.5rem; margin-bottom: 0.75rem;">
+            <strong style="color: #34d399;">🛡️ SSD Safety & Direct Renaming Disclaimer:</strong>
+            <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.45;">
+              Direct renaming (<code>auto_rename</code>) operates instantly at the filesystem directory index level. It does <b>not</b> copy, re-encode, or rewrite any video data, so it creates <b>0 extra writes on your SSD</b> and has <b>0% risk of stream corruption</b>.
+              In-file container tagging re-muxes the container with FFmpeg to embed tags, which writes duplicate stream data to disk.
+            </p>
+          </div>
+
+          <div class="checkbox-grid mt-2">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-auto-rename">
+              <b>Auto-rename files upon completion (Zero SSD video writes)</b>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-auto-tag">
+              <b>Auto-apply container tags upon completion (In-File Metadata)</b>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-backup-before-tagging" checked>
+              <span>Backup original file before container tagging (<code>.bak</code>)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-flush-backup-on-success" checked>
+              <span><b>Flush <code>.bak</code> safety file automatically</b> upon verified success</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-verify-tag-integrity" checked>
+              <span>Verify stream integrity before replacing original</span>
+            </label>
+          </div>
+
+          <div class="mt-3" style="display: flex; gap: 0.75rem; align-items: center;">
+            <button id="btn-flush-backups" class="btn btn-secondary btn-sm" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);" title="Scan for and delete any leftover .bak backup files across processed folders">🧹 Flush Leftover .bak Files</button>
+            <span id="flush-backups-status" style="font-size: 0.85rem; color: var(--text-muted);"></span>
+          </div>
+        </div>
+
+        <!-- 5. HARDWARE, ENGINES & SYSTEM CARD -->
+        <div class="card settings-section-card" id="card-settings-system">
+          <div class="card-header">
+            <h2>🛠️ Media Engines, Hardware & System Execution</h2>
+            <p class="card-desc">FFmpeg engine binaries, pipeline concurrency, temporary cache management, and facial recognition engine settings.</p>
+          </div>
+
+          <!-- FFmpeg & Video Engine Section -->
+          <div id="card-ffmpeg-management" style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+            <div class="flex-between">
+              <div>
+                <strong style="color: #38bdf8; font-size: 0.95rem;">🎬 FFmpeg & Media Processing Binaries</strong>
+                <p class="card-desc" style="margin: 0.2rem 0 0 0;">Required for frame extraction, audio separation, and container tagging.</p>
+              </div>
+            </div>
+
+            <div class="ffmpeg-status-grid mt-2">
+              <div class="stat-card">
+                <span class="stat-name">FFmpeg Binary:</span>
+                <div class="flex-between mt-1">
+                  <span id="ffmpeg-detected-status" class="badge-tag checking">Checking...</span>
+                  <code id="ffmpeg-detected-path" style="font-size:0.75rem; color:#94a3b8;"></code>
+                </div>
+              </div>
+              <div class="stat-card">
+                <span class="stat-name">FFprobe Binary:</span>
+                <div class="flex-between mt-1">
+                  <span id="ffprobe-detected-status" class="badge-tag checking">Checking...</span>
+                  <code id="ffprobe-detected-path" style="font-size:0.75rem; color:#94a3b8;"></code>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <details class="advanced-paths">
+                <summary style="cursor:pointer; color:#38bdf8; font-size:0.85rem; font-weight:600;">
+                  ⚙️ Manually locate / specify binary paths on host system
+                </summary>
+                <div class="form-grid mt-2">
+                  <div class="form-group">
+                    <label for="cfg-ffmpeg-path">Custom FFmpeg Path</label>
+                    <input type="text" id="cfg-ffmpeg-path" class="form-control" placeholder="/usr/bin/ffmpeg or C:\tools\ffmpeg.exe">
+                  </div>
+                  <div class="form-group">
+                    <label for="cfg-ffprobe-path">Custom FFprobe Path</label>
+                    <input type="text" id="cfg-ffprobe-path" class="form-control" placeholder="/usr/bin/ffprobe or C:\tools\ffprobe.exe">
+                  </div>
+                </div>
+                <div class="mt-2 flex-between">
+                  <button id="btn-verify-ffmpeg-paths" class="btn btn-sm btn-secondary">Test Custom Paths</button>
+                  <span id="verify-ffmpeg-result" style="font-size:0.8rem;"></span>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <!-- Pipeline Concurrency -->
+          <div class="form-group mt-3">
+            <label for="cfg-pipeline-execution-mode" style="font-weight: 600;">⚡ Extraction & AI Pipeline Execution Mode</label>
+            <select id="cfg-pipeline-execution-mode" class="form-control">
+              <option value="serial">Serial Processing (Default — Safest for Local Hardware / Low VRAM)</option>
+              <option value="concurrent">Concurrent Processing (Parallel Audio & Frame Extraction)</option>
+            </select>
+            <small class="helper-text">Serial mode ensures Whisper audio extraction and Vision frame reasoning run sequentially, avoiding GPU memory spikes.</small>
+          </div>
+
+          <!-- Cache Retention -->
+          <div class="form-group mt-3">
+            <label for="cfg-temp-retention" style="font-weight: 600;">🧹 Temporary Frame & Audio Cache Retention</label>
+            <select id="cfg-temp-retention" class="form-control">
+              <option value="immediate">Delete immediately after processing clip (Default / Recommended)</option>
+              <option value="1_day">Retain for 1 day (24 hours)</option>
+              <option value="7_days">Retain for 7 days (1 week)</option>
+              <option value="30_days">Retain for 30 days (1 month)</option>
+              <option value="persistent">Keep indefinitely (Persistent cache)</option>
+            </select>
+            <small class="helper-text">Immediate deletion automatically frees disk space as soon as each video analysis finishes.</small>
+          </div>
+
+          <hr class="divider">
+
+          <!-- Facial Recognition Section -->
+          <div class="flex-between align-center mb-2">
+            <div>
+              <h3>👤 Facial Recognition & Person Identification</h3>
+              <p class="card-desc">Identify family members and recurring individuals. Uses built-in local clustering by default or connects to an external CompreFace server.</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="document.querySelector('.nav-tab[data-tab=\'tab-faces\']')?.click()">
+              👥 Open Faces Database ➔
+            </button>
+          </div>
+
+          <div class="mt-2">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-face-enabled">
+              <b>Enable Facial Recognition during queue processing</b>
+            </label>
+          </div>
+
+          <div id="face-settings-panel" class="mt-2">
+            <div class="form-group">
+              <label for="cfg-face-provider">Recognition Engine</label>
+              <select id="cfg-face-provider" class="form-control">
+                <option value="builtin">Built-in Neural Engine (Offline / Private / YuNet CPU)</option>
+                <option value="compreface">External CompreFace Server (Network REST API)</option>
+              </select>
+            </div>
+
+            <!-- Built-in Neural Face Engine Settings -->
+            <div id="section-builtin-face" class="mt-3">
+              <div class="card p-3 mb-3" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px;">
+                <div class="flex-between align-center mb-1">
+                  <label for="cfg-face-confidence" style="font-weight: 600; color: var(--text-main);">
+                    🎯 Minimum Face Detection Confidence
+                  </label>
+                  <span id="badge-face-confidence" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.9rem; padding: 0.2rem 0.6rem;">0.70</span>
+                </div>
+                <input type="range" id="cfg-face-confidence" class="form-range w-100" min="0.30" max="0.95" step="0.05" value="0.70" style="width: 100%;">
+                
+                <div class="slider-ticks flex-between mt-1 text-muted" style="font-size: 0.75rem;">
+                  <span>0.30 (Permissive)</span>
+                  <span>0.70 (Recommended Default)</span>
+                  <span>0.95 (Ultra-Strict)</span>
+                </div>
+
+                <div class="helper-box mt-2 p-2" style="background: rgba(30, 41, 59, 0.7); border-radius: 6px; font-size: 0.8rem; line-height: 1.4;">
+                  <p><strong>ℹ️ What this controls:</strong> Minimum neural probability required to recognize a shape as an actual human face (rejecting non-face artifacts).</p>
+                </div>
+              </div>
+
+              <div class="card p-3" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px;">
+                <div class="flex-between align-center mb-1">
+                  <label for="cfg-face-distance" style="font-weight: 600; color: var(--text-main);">
+                    👥 Maximum Recognition Distance (Person Coherence)
+                  </label>
+                  <span id="badge-face-distance" class="badge" style="background: var(--primary); font-family: monospace; font-size: 0.9rem; padding: 0.2rem 0.6rem;">Distance: 0.45 (Similarity: 0.55)</span>
+                </div>
+                <input type="range" id="cfg-face-distance" class="form-range w-100" min="0.20" max="0.95" step="0.02" value="0.45" style="width: 100%;">
+                
+                <div class="slider-ticks flex-between mt-1 text-muted" style="font-size: 0.75rem;">
+                  <span>0.20 (Strict)</span>
+                  <span>0.45 (Balanced)</span>
+                  <span>0.70 (High Coherence)</span>
+                  <span>0.95 (Ultra-Permissive)</span>
+                </div>
+
+                <div class="helper-box mt-2 p-2" style="background: rgba(30, 41, 59, 0.7); border-radius: 6px; font-size: 0.8rem; line-height: 1.4;">
+                  <p><strong>ℹ️ What this controls:</strong> Clustering tolerance when linking detected faces to person profiles (e.g. <code>Person_01</code>).</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- External CompreFace Configuration -->
+            <div id="section-compreface" class="provider-section hidden mt-2">
+              <div class="form-group">
+                <label for="cfg-compreface-url">CompreFace Server URL</label>
+                <input type="text" id="cfg-compreface-url" class="form-control" placeholder="http://192.168.1.100:8000">
+              </div>
+              <div class="form-group">
+                <label for="cfg-compreface-key">API Key (Recognition Service)</label>
+                <div class="input-with-button">
+                  <input type="password" id="cfg-compreface-key" class="form-control" placeholder="00000000-0000-0000-0000-000000000000">
+                  <button id="btn-test-compreface" class="btn btn-secondary">Test Connection</button>
+                </div>
+                <small class="helper-text" id="compreface-test-status"></small>
+              </div>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <!-- Bottom Master Action Bar -->
           <div class="mt-4" style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
             <button id="btn-save-config" class="btn btn-primary">💾 Save Settings</button>
             <button id="btn-export-config" type="button" class="btn btn-secondary" title="Export settings as machine-readable JSON">📤 Export Settings (JSON)</button>

@@ -2379,6 +2379,45 @@ async function checkFFmpegStatus() {
 }
 
 function initSettings() {
+  // Settings Sub-Navigation Click & Scroll Handler
+  document.querySelectorAll(".settings-subnav-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".settings-subnav-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const targetId = btn.dataset.target;
+      const targetCard = document.getElementById(targetId);
+      if (targetCard) {
+        // Offset smooth scroll slightly below the sticky header
+        const headerOffset = 130;
+        const elementPosition = targetCard.getBoundingClientRect().top;
+        const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+        window.scrollTo({
+          top: Math.max(0, offsetPosition),
+          behavior: "smooth"
+        });
+      }
+    });
+  });
+
+  // Wire Sticky Save & Action Buttons to Bottom Action Buttons
+  const btnSaveSticky = document.getElementById("btn-save-config-sticky");
+  const btnSaveMain = document.getElementById("btn-save-config");
+  if (btnSaveSticky && btnSaveMain) {
+    btnSaveSticky.addEventListener("click", () => btnSaveMain.click());
+  }
+
+  const btnExportSticky = document.getElementById("btn-export-config-sticky");
+  const btnExportMain = document.getElementById("btn-export-config");
+  if (btnExportSticky && btnExportMain) {
+    btnExportSticky.addEventListener("click", () => btnExportMain.click());
+  }
+
+  const btnImportSticky = document.getElementById("btn-import-config-sticky");
+  const btnImportMain = document.getElementById("btn-import-config");
+  if (btnImportSticky && btnImportMain) {
+    btnImportSticky.addEventListener("click", () => btnImportMain.click());
+  }
+
   const provSel = document.getElementById("cfg-vision-provider");
   provSel.addEventListener("change", () => {
     toggleProviderSections(provSel.value);
@@ -2667,6 +2706,11 @@ function initSettings() {
         if (statusEl) {
           statusEl.classList.remove("hidden");
           setTimeout(() => statusEl.classList.add("hidden"), 3000);
+        }
+        const stickyStatusEl = document.getElementById("save-config-status-sticky");
+        if (stickyStatusEl) {
+          stickyStatusEl.classList.remove("hidden");
+          setTimeout(() => stickyStatusEl.classList.add("hidden"), 3000);
         }
         await loadConfig();
         checkAIHealth();
