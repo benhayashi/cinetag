@@ -4,6 +4,7 @@ let scannedVideos = [];
 let renamePreviews = [];
 let pollInterval = null;
 let lastQueueTasks = [];
+let activeQueueInspectTaskId = null;
 const selectedCompletedTasks = new Set();
 let seriesModalItems = [];
 let seriesPreviewDebounce = null;
@@ -614,7 +615,11 @@ function renderQueueTable(tasks, currentTask) {
 
   tbody.innerHTML = tasks.map((t, idx) => {
     const isProcessing = t.status === "processing" || (currentTask && currentTask.id === t.id && t.status !== "completed" && t.status !== "failed");
-    const rowClass = isProcessing ? 'class="queue-row-active"' : '';
+    const isInspected = t.id === activeQueueInspectTaskId;
+    let rowClasses = [];
+    if (isProcessing) rowClasses.push("queue-row-active");
+    if (isInspected) rowClasses.push("queue-row-selected");
+    const rowClass = rowClasses.length > 0 ? `class="${rowClasses.join(" ")}"` : '';
     const isCompleted = t.status === "completed";
     const isChecked = selectedCompletedTasks.has(t.id);
     
@@ -682,7 +687,7 @@ function renderQueueTable(tasks, currentTask) {
       : ``;
 
     return `
-      <tr ${rowClass}>
+      <tr ${rowClass} onclick="handleQueueRowClick(event, '${t.id}')">
         <td style="text-align:center;">${chkHtml}</td>
         <td style="font-weight:600; color:${isProcessing ? '#38bdf8' : 'var(--text-muted)'}; font-size:0.85rem;">
           ${isProcessing ? '▶' : (idx + 1)}
@@ -706,6 +711,51 @@ function renderQueueTable(tasks, currentTask) {
     `;
   }).join("");
 }
+
+window.handleQueueRowClick = function(event, taskId) {
+  if (event.target.closest('button, input, a, select')) return;
+  selectQueueItemForInspection(taskId);
+};
+
+window.selectQueueItemForInspection = function(taskId) {
+  if (activeQueueInspectTaskId === taskId) {
+    // Clicking the same row again deselects it, reverting to auto-latest
+    activeQueueInspectTaskId = null;
+  } else {
+    activeQueueInspectTaskId = taskId;
+  }
+  
+  // Re-render table rows to update selected row styling
+  renderQueueTable(lastQueueTasks);
+  
+  if (activeQueueInspectTaskId) {
+    const inspectedTask = (lastQueueTasks || []).find(t => t.id === activeQueueInspectTaskId);
+    if (inspectedTask) {
+      renderLatestResult(inspectedTask, true);
+    }
+  } else {
+    // Revert to latest completed task if available
+    const completedTasks = (lastQueueTasks || []).filter(t => t.status === "completed");
+    if (completedTasks.length > 0) {
+      renderLatestResult(completedTasks[completedTasks.length - 1], false);
+    } else {
+      const card = document.getElementById("section-latest-result");
+      if (card) card.classList.add("hidden");
+    }
+  }
+};
+
+window.clearQueueItemInspection = function() {
+  activeQueueInspectTaskId = null;
+  renderQueueTable(lastQueueTasks);
+  const completedTasks = (lastQueueTasks || []).filter(t => t.status === "completed");
+  if (completedTasks.length > 0) {
+    renderLatestResult(completedTasks[completedTasks.length - 1], false);
+  } else {
+    const card = document.getElementById("section-latest-result");
+    if (card) card.classList.add("hidden");
+  }
+};
 
 window.openRenameModalByTaskId = function(taskId) {
   const task = (lastQueueTasks || []).find(t => t.id === taskId);
@@ -840,10 +890,31 @@ async function pollStatus() {
         renderScannedTable();
       }
 
-      if (completedTasks.length > 0) {
+      if (activeQueueInspectTaskId) {
+        const inspected = data.tasks.find(t => t.id === activeQueueInspectTaskId);
+        if (inspected) {
+          renderLatestResult(inspected, true);
+        } else {
+          // Inspected task was removed from queue
+          activeQueueInspectTaskId = null;
+          if (completedTasks.length > 0) {
+            renderLatestResult(completedTasks[completedTasks.length - 1], false);
+          } else {
+            const card = document.getElementById("section-latest-result");
+            if (card) card.classList.add("hidden");
+          }
+        }
+      } else if (completedTasks.length > 0) {
         const latestTask = completedTasks[completedTasks.length - 1];
-        renderLatestResult(latestTask);
+        renderLatestResult(latestTask, false);
+      } else {
+        const card = document.getElementById("section-latest-result");
+        if (card) card.classList.add("hidden");
       }
+    } else {
+      activeQueueInspectTaskId = null;
+      const card = document.getElementById("section-latest-result");
+      if (card) card.classList.add("hidden");
     }
 
     // If Mode B (uploads) is currently visible, poll uploads to show progress/results live
@@ -857,15 +928,112 @@ async function pollStatus() {
   }
 }
 
-function renderLatestResult(task) {
+function renderLatestResult(task, isInspected = false) {
   const card = document.getElementById("section-latest-result");
-  if (!card || !task || !task.result) return;
+  if (!card || !task) return;
+
+  const iconEl = document.getElementById("latest-result-icon");
+  const titleEl = document.getElementById("latest-result-title");
+  const badgeEl = document.getElementById("latest-result-badge");
+  const clearBtn = document.getElementById("btn-clear-inspect");
+  const fnEl = document.getElementById("latest-result-filename");
+  const sumEl = document.getElementById("latest-result-summary");
+  const tagsEl = document.getElementById("latest-result-tags");
+  const dlEl = document.getElementById("latest-result-downloads");
+  const btnRenameLatest = document.getElementById("btn-rename-latest-result");
+  const btnModal = document.getElementById("btn-open-latest-modal");
+  const latestProposalBanner = document.getElementById("latest-result-date-proposal-banner");
+
+  if (clearBtn) {
+    if (isInspected) {
+      clearBtn.classList.remove("hidden");
+      clearBtn.onclick = () => clearQueueItemInspection();
+    } else {
+      clearBtn.classList.add("hidden");
+    }
+  }
+
+  if (badgeEl) {
+    if (isInspected) {
+      badgeEl.style.display = "inline-block";
+      badgeEl.textContent = "Selected Clip";
+      badgeEl.className = "badge-tag queued";
+    } else {
+      badgeEl.style.display = "inline-block";
+      badgeEl.textContent = "Latest Finished";
+      badgeEl.className = "badge-tag completed";
+    }
+  }
+
+  // Handle Unprocessed / In-Progress / Failed Tasks
+  if (task.status !== "completed" || !task.result) {
+    const isProcessing = task.status === "processing";
+    const isFailed = task.status === "failed";
+    const isQueued = task.status === "queued" || !task.status;
+
+    if (iconEl) {
+      iconEl.textContent = isProcessing ? "⚡" : (isFailed ? "❌" : "⏳");
+    }
+    if (titleEl) {
+      if (isProcessing) {
+        const prog = task.progress || 0;
+        const stage = task.stage ? ` - ${task.stage}` : "";
+        titleEl.textContent = `Processing (${prog}%)${stage}`;
+      } else if (isFailed) {
+        titleEl.textContent = "Processing Failed";
+      } else {
+        titleEl.textContent = "Queued (Unprocessed)";
+      }
+    }
+    if (fnEl) {
+      fnEl.textContent = task.filename || "Unknown file";
+    }
+    if (sumEl) {
+      if (isProcessing) {
+        sumEl.textContent = `Video is currently being processed (${task.progress || 0}%). AI vision analysis and speech transcription are in progress...`;
+      } else if (isFailed) {
+        sumEl.textContent = `Analysis failed: ${task.error || "An unexpected error occurred during processing."}`;
+      } else {
+        sumEl.textContent = "This video is waiting in the queue and has not yet been processed by the AI vision and subtitle model. Once finished, its summary and metadata will appear here.";
+      }
+    }
+    if (tagsEl) tagsEl.innerHTML = "";
+    if (dlEl) dlEl.innerHTML = "";
+    if (latestProposalBanner) latestProposalBanner.classList.add("hidden");
+
+    if (card) {
+      card.style.borderLeftColor = isProcessing ? "#38bdf8" : (isFailed ? "#ef4444" : "#f59e0b");
+      card.dataset.filePath = task.file_path || "";
+      card.dataset.taskId = task.id || "";
+      card.dataset.title = "";
+    }
+
+    if (btnRenameLatest) {
+      btnRenameLatest.onclick = () => openRenameModalByTaskId(task.id);
+    }
+    if (btnModal) {
+      // Hide or disable modal view for unprocessed tasks
+      btnModal.disabled = true;
+      btnModal.style.opacity = "0.5";
+      btnModal.style.pointerEvents = "none";
+    }
+
+    card.classList.remove("hidden");
+    return;
+  }
+
+  // --- Completed Task with Results ---
+  if (iconEl) iconEl.textContent = "🎉";
+  if (card) card.style.borderLeftColor = "#10b981";
+  if (btnModal) {
+    btnModal.disabled = false;
+    btnModal.style.opacity = "1";
+    btnModal.style.pointerEvents = "auto";
+  }
 
   const res = task.result;
-  const titleEl = document.getElementById("latest-result-title");
   if (titleEl) titleEl.textContent = res.title || "Analysis Complete";
 
-  const fnEl = document.getElementById("latest-result-filename");
   if (fnEl) {
     let fnDisplay = task.filename;
     if (res.suggested_filename && res.suggested_filename !== task.filename) {
@@ -874,11 +1042,9 @@ function renderLatestResult(task) {
     fnEl.textContent = fnDisplay;
   }
 
-  const sumEl = document.getElementById("latest-result-summary");
   if (sumEl) sumEl.textContent = res.summary || "Video analysis finished successfully.";
 
   // Tags, People, Animals & Objects
-  const tagsEl = document.getElementById("latest-result-tags");
   if (tagsEl) {
     let pills = [];
     if (res.people && res.people.length > 0) {
@@ -913,7 +1079,6 @@ function renderLatestResult(task) {
   }
 
   // Sidecar downloads
-  const dlEl = document.getElementById("latest-result-downloads");
   if (dlEl) {
     const sidecars = res.sidecars || [];
     let dlHtml = "";
@@ -947,13 +1112,11 @@ function renderLatestResult(task) {
   card.dataset.title = res.title || "";
 
   // Button to rename
-  const btnRenameLatest = document.getElementById("btn-rename-latest-result");
   if (btnRenameLatest) {
     btnRenameLatest.onclick = () => openRenameModal(targetPath, res.title || "", task.id);
   }
 
   // Button to open full modal
-  const btnModal = document.getElementById("btn-open-latest-modal");
   if (btnModal) {
     btnModal.onclick = () => openResultsModal(targetPath);
   }

@@ -423,6 +423,20 @@ body {
   border-bottom: 1px solid rgba(56, 189, 248, 0.3) !important;
 }
 
+/* User-Selected Queue Row Highlight */
+.queue-row-selected {
+  background: rgba(59, 130, 246, 0.14) !important;
+  box-shadow: inset 4px 0 0 #3b82f6;
+}
+
+.queue-row-selected td {
+  border-bottom: 1px solid rgba(59, 130, 246, 0.35) !important;
+}
+
+#queue-tbody tr {
+  cursor: pointer;
+}
+
 @keyframes pulseProcessing {
   0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.4); }
   70% { box-shadow: 0 0 0 6px rgba(56, 189, 248, 0); }

@@ -357,17 +357,21 @@
           </div>
         </div>
 
-        <!-- Latest Processed Video Result Panel -->
+        <!-- Latest / Inspected Processed Video Result Panel -->
         <div id="section-latest-result" class="card result-highlight-card hidden" style="border-left: 4px solid #10b981; background: rgba(15, 23, 42, 0.75);">
           <div class="card-header flex-between">
             <div style="display:flex; align-items:center; gap:0.6rem;">
-              <span style="font-size:1.4rem;">🎉</span>
+              <span id="latest-result-icon" style="font-size:1.4rem;">🎉</span>
               <div>
-                <h2 style="font-size:1.15rem; margin-bottom:2px;" id="latest-result-title">Analysis Complete</h2>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <h2 style="font-size:1.15rem; margin-bottom:2px;" id="latest-result-title">Analysis Complete</h2>
+                  <span id="latest-result-badge" class="badge-tag" style="font-size:0.7rem; display:none;">Selected</span>
+                </div>
                 <span class="subtext" id="latest-result-filename" style="color:#38bdf8; font-weight:500;">filename.mp4</span>
               </div>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center;">
+              <button id="btn-clear-inspect" class="btn btn-sm btn-secondary hidden" title="Return to showing the latest completed video">✕ Clear Selection</button>
               <button id="btn-rename-latest-result" class="btn btn-secondary" title="Rename this video and all associated sidecar files">✏️ Rename</button>
               <button id="btn-open-latest-modal" class="btn btn-primary">👁️ View Full Results & Events</button>
             </div>
