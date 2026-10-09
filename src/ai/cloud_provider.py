@@ -87,6 +87,7 @@ class CloudVisionProvider(BaseVisionProvider):
         prompt_guidance: Optional[str] = None,
         slug_guidance: Optional[str] = None,
         filename_context: Optional[str] = None,
+        coherent_context: Optional[str] = None,
         timeout_seconds: Optional[int] = None
     ) -> VideoAnalysisResult:
         chosen_model = model or self.default_model
@@ -97,6 +98,7 @@ class CloudVisionProvider(BaseVisionProvider):
                 chosen_model or "gemini-2.5-flash",
                 system_prompt, prompt_guidance, slug_guidance=slug_guidance,
                 filename_context=filename_context,
+                coherent_context=coherent_context,
                 timeout_seconds=timeout_seconds
             )
         elif self.provider == "anthropic":
@@ -105,6 +107,7 @@ class CloudVisionProvider(BaseVisionProvider):
                 chosen_model or "claude-3-5-sonnet-20241022",
                 system_prompt, prompt_guidance, slug_guidance=slug_guidance,
                 filename_context=filename_context,
+                coherent_context=coherent_context,
                 timeout_seconds=timeout_seconds
             )
         elif self.provider == "openai":
@@ -113,6 +116,7 @@ class CloudVisionProvider(BaseVisionProvider):
                 chosen_model or "gpt-4o",
                 system_prompt, prompt_guidance, slug_guidance=slug_guidance,
                 filename_context=filename_context,
+                coherent_context=coherent_context,
                 timeout_seconds=timeout_seconds
             )
         elif self.provider == "openrouter":
@@ -121,6 +125,7 @@ class CloudVisionProvider(BaseVisionProvider):
                 chosen_model or "google/gemini-2.5-flash",
                 system_prompt, prompt_guidance, slug_guidance=slug_guidance,
                 filename_context=filename_context,
+                coherent_context=coherent_context,
                 timeout_seconds=timeout_seconds
             )
         elif self.provider in ("custom_openai", "custom"):
@@ -129,12 +134,13 @@ class CloudVisionProvider(BaseVisionProvider):
                 chosen_model or "gpt-4o",
                 system_prompt, prompt_guidance, slug_guidance=slug_guidance,
                 filename_context=filename_context,
+                coherent_context=coherent_context,
                 timeout_seconds=timeout_seconds
             )
         else:
             raise ValueError(f"Unsupported cloud provider: {self.provider}")
 
-    def _call_gemini(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, slug_guidance=None, filename_context=None, timeout_seconds=None):
+    def _call_gemini(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, slug_guidance=None, filename_context=None, coherent_context=None, timeout_seconds=None):
         api_key = self.get_api_key()
         if not api_key:
             raise ValueError("Google Gemini API key is missing. Configure it in Settings > Cloud Provider.")
@@ -146,7 +152,8 @@ class CloudVisionProvider(BaseVisionProvider):
             context_prompt,
             prompt_guidance=prompt_guidance,
             slug_guidance=slug_guidance,
-            filename_context=filename_context
+            filename_context=filename_context,
+            coherent_context=coherent_context
         )
         active_system_prompt = get_system_prompt(system_prompt)
 
@@ -177,7 +184,7 @@ class CloudVisionProvider(BaseVisionProvider):
             res_obj.audio_transcript = audio_transcript
             return res_obj
 
-    def _call_anthropic(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, slug_guidance=None, filename_context=None, timeout_seconds=None):
+    def _call_anthropic(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, slug_guidance=None, filename_context=None, coherent_context=None, timeout_seconds=None):
         api_key = self.get_api_key()
         if not api_key:
             raise ValueError("Anthropic API key is missing. Configure it in Settings > Cloud Provider.")
@@ -189,7 +196,8 @@ class CloudVisionProvider(BaseVisionProvider):
             context_prompt,
             prompt_guidance=prompt_guidance,
             slug_guidance=slug_guidance,
-            filename_context=filename_context
+            filename_context=filename_context,
+            coherent_context=coherent_context
         )
         active_system_prompt = get_system_prompt(system_prompt)
 
@@ -231,7 +239,7 @@ class CloudVisionProvider(BaseVisionProvider):
             res_obj.audio_transcript = audio_transcript
             return res_obj
 
-    def _call_openai(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, slug_guidance=None, filename_context=None, timeout_seconds=None):
+    def _call_openai(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, slug_guidance=None, filename_context=None, coherent_context=None, timeout_seconds=None):
         api_key = self.get_api_key()
         if not api_key:
             raise ValueError("OpenAI API key is missing. Configure it in Settings > Cloud Provider.")
@@ -250,12 +258,13 @@ class CloudVisionProvider(BaseVisionProvider):
             prompt_guidance=prompt_guidance,
             slug_guidance=slug_guidance,
             filename_context=filename_context,
+            coherent_context=coherent_context,
             timeout_seconds=timeout_seconds
         )
         res_obj.provider_name = "openai"
         return res_obj
 
-    def _call_openrouter(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, slug_guidance=None, filename_context=None, timeout_seconds=None):
+    def _call_openrouter(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, slug_guidance=None, filename_context=None, coherent_context=None, timeout_seconds=None):
         api_key = self.get_api_key()
         if not api_key:
             raise ValueError("OpenRouter API key is missing. Configure it in Settings > Cloud Provider.")
@@ -274,12 +283,13 @@ class CloudVisionProvider(BaseVisionProvider):
             prompt_guidance=prompt_guidance,
             slug_guidance=slug_guidance,
             filename_context=filename_context,
+            coherent_context=coherent_context,
             timeout_seconds=timeout_seconds
         )
         res_obj.provider_name = "openrouter"
         return res_obj
 
-    def _call_custom_openai(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, slug_guidance=None, filename_context=None, timeout_seconds=None):
+    def _call_custom_openai(self, frames, audio_transcript, context_prompt, model, system_prompt=None, prompt_guidance=None, slug_guidance=None, filename_context=None, coherent_context=None, timeout_seconds=None):
         api_key = self.get_api_key()
         endpoint = self.custom_endpoint or "https://api.openai.com/v1"
 
@@ -297,6 +307,7 @@ class CloudVisionProvider(BaseVisionProvider):
             prompt_guidance=prompt_guidance,
             slug_guidance=slug_guidance,
             filename_context=filename_context,
+            coherent_context=coherent_context,
             timeout_seconds=timeout_seconds
         )
         res_obj.provider_name = "custom_openai"

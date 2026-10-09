@@ -54,7 +54,8 @@ def build_user_prompt(
     subtitle_dialogue: Optional[str] = None,
     prompt_guidance: Optional[str] = None,
     slug_guidance: Optional[str] = None,
-    filename_context: Optional[str] = None
+    filename_context: Optional[str] = None,
+    coherent_context: Optional[str] = None
 ) -> str:
     parts = ["Here are the sampled video frames taken at timestamps: " + ", ".join(timestamps) + "."]
     
@@ -71,6 +72,13 @@ def build_user_prompt(
 
     if filename_context and filename_context.strip():
         parts.append(f"\n{filename_context.strip()}")
+
+    if coherent_context and coherent_context.strip():
+        parts.append(
+            "\n=== Coherent Clip & Sequential Context ===\n"
+            + coherent_context.strip()
+            + "\n==========================================="
+        )
 
     if prompt_guidance and prompt_guidance.strip():
         parts.append(

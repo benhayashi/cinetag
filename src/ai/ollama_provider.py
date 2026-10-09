@@ -54,6 +54,7 @@ class OllamaVisionProvider(BaseVisionProvider):
         prompt_guidance: Optional[str] = None,
         slug_guidance: Optional[str] = None,
         filename_context: Optional[str] = None,
+        coherent_context: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
         num_ctx: Optional[int] = None,
         **kwargs
@@ -66,7 +67,8 @@ class OllamaVisionProvider(BaseVisionProvider):
             context_prompt,
             prompt_guidance=prompt_guidance,
             slug_guidance=slug_guidance,
-            filename_context=filename_context
+            filename_context=filename_context,
+            coherent_context=coherent_context
         )
         active_system_prompt = get_system_prompt(system_prompt)
 

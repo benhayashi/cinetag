@@ -45,6 +45,13 @@ class TaskItem(BaseModel):
     slug_guidance: Optional[str] = None
     use_filename_context: Optional[bool] = None
     filename_date_order: Optional[str] = None
+    coherent_mode: Optional[str] = "none"  # "none", "same_event", "same_people", "both"
+    series_id: Optional[str] = None
+    series_title: Optional[str] = None
+    series_index: Optional[int] = None
+    series_total: Optional[int] = None
+    auto_enumerate: bool = False
+    enum_style: Optional[str] = "pt"
 
 class QueueManager:
     """Manages background batch processing queue and worker thread."""
@@ -57,6 +64,7 @@ class QueueManager:
         self._worker_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self.logs: List[Dict[str, Any]] = []
+        self._coherent_group_state: Dict[str, Dict[str, Any]] = {}
 
     def log(self, message: str, level: str = "info", task_id: Optional[str] = None):
         entry = {
@@ -84,31 +92,66 @@ class QueueManager:
         prompt_guidance: Optional[str] = None,
         slug_guidance: Optional[str] = None,
         use_filename_context: Optional[bool] = None,
-        filename_date_order: Optional[str] = None
+        filename_date_order: Optional[str] = None,
+        coherent_mode: Optional[str] = "none",
+        series_id: Optional[str] = None,
+        series_title: Optional[str] = None,
+        auto_enumerate: bool = False,
+        enum_style: Optional[str] = "pt"
     ) -> List[TaskItem]:
         with self._lock:
             added = []
             active_paths = {t.file_path for t in self.queue if t.status in ("queued", "processing")}
+            candidate_paths = []
             for p_str in file_paths:
                 p = Path(p_str)
                 resolved_str = str(p.resolve())
                 if p.exists() and resolved_str not in active_paths:
-                    # Remove older completed/failed record so clip can be reprocessed cleanly
-                    self.queue = [t for t in self.queue if t.file_path != resolved_str]
-                    task = TaskItem(
-                        file_path=resolved_str,
-                        filename=p.name,
-                        conflict_mode=conflict_mode,
-                        date_override=date_override,
-                        date_source=date_source,
-                        prompt_guidance=prompt_guidance,
-                        slug_guidance=slug_guidance,
-                        use_filename_context=use_filename_context,
-                        filename_date_order=filename_date_order
-                    )
-                    self.queue.append(task)
-                    added.append(task)
-            self.log(f"Added {len(added)} files to queue (conflict mode: {conflict_mode}).")
+                    candidate_paths.append((p, resolved_str))
+
+            is_coherent = bool((coherent_mode and coherent_mode != "none") or auto_enumerate)
+            batch_series_id = series_id
+            if is_coherent and not batch_series_id and candidate_paths:
+                batch_series_id = f"coherent_{uuid.uuid4().hex[:8]}"
+
+            if batch_series_id and batch_series_id not in self._coherent_group_state:
+                self._coherent_group_state[batch_series_id] = {
+                    "series_title": series_title or "",
+                    "coherent_mode": coherent_mode or "none",
+                    "people": [],
+                    "previous_summary": None,
+                    "previous_title": None,
+                    "clips_completed": 0,
+                    "auto_enumerate": auto_enumerate,
+                    "enum_style": enum_style or "pt"
+                }
+
+            total_items = len(candidate_paths)
+            for idx, (p, resolved_str) in enumerate(candidate_paths):
+                # Remove older completed/failed record so clip can be reprocessed cleanly
+                self.queue = [t for t in self.queue if t.file_path != resolved_str]
+                task = TaskItem(
+                    file_path=resolved_str,
+                    filename=p.name,
+                    conflict_mode=conflict_mode,
+                    date_override=date_override,
+                    date_source=date_source,
+                    prompt_guidance=prompt_guidance,
+                    slug_guidance=slug_guidance,
+                    use_filename_context=use_filename_context,
+                    filename_date_order=filename_date_order,
+                    coherent_mode=coherent_mode or "none",
+                    series_id=batch_series_id,
+                    series_title=series_title,
+                    series_index=(idx + 1) if batch_series_id else None,
+                    series_total=total_items if batch_series_id else None,
+                    auto_enumerate=auto_enumerate,
+                    enum_style=enum_style or "pt"
+                )
+                self.queue.append(task)
+                added.append(task)
+
+            self.log(f"Added {len(added)} files to queue (conflict mode: {conflict_mode}, coherent_mode: {coherent_mode or 'none'}).")
             return added
 
     def add_completed_task(
@@ -597,6 +640,56 @@ class QueueManager:
                     if clue_preview:
                         self.log(f"Applying filename context hints: \"{clue_preview}\"", task_id=task.id)
 
+            # Coherent clip sequential context preparation
+            coherent_ctx_prompt = None
+            if getattr(task, "series_id", None) and getattr(task, "coherent_mode", "none") not in (None, "none"):
+                series_info = self._coherent_group_state.get(task.series_id, {})
+                s_mode = task.coherent_mode
+                s_idx = task.series_index or 1
+                s_tot = task.series_total or 1
+                s_title = task.series_title or series_info.get("series_title") or ""
+                prev_summary = series_info.get("previous_summary")
+                known_people = series_info.get("people", [])
+
+                coherent_lines = []
+                coherent_lines.append(f"This video is Part {s_idx} of {s_tot} in a coherent sequence.")
+                if s_title:
+                    coherent_lines.append(f"Series / Event Title: \"{s_title}\"")
+
+                if s_mode in ("same_event", "both"):
+                    coherent_lines.append(
+                        "Context & Continuity: This clip belongs to the same continuous event and storyline as the other clips in this batch."
+                    )
+                    if prev_summary:
+                        coherent_lines.append(
+                            f"Summary of preceding clip (Part {s_idx - 1}):\n\"\"\"\n{prev_summary}\n\"\"\"\n"
+                            "Instructions: Continue the narrative progression logically from the preceding clip. Keep the event framing, setting, and description cohesive."
+                        )
+                    else:
+                        coherent_lines.append(
+                            "Instructions: Establish the core narrative, event setting, and theme that will carry forward to subsequent clips in this series."
+                        )
+
+                if s_mode in ("same_people", "both"):
+                    coherent_lines.append(
+                        "Subjects & Identity: This clip features the same group / recurring set of individuals as the rest of this batch."
+                    )
+                    if known_people:
+                        people_list_str = ", ".join(known_people)
+                        coherent_lines.append(
+                            f"Known individuals identified in this series so far: {people_list_str}.\n"
+                            "Instructions: Maintain consistent naming and identify these specific individuals when observed in this clip."
+                        )
+                        person_note = f"Recurring people from earlier clips in this series: {people_list_str}. Identify them accurately."
+                        if person_note not in guidance_notes:
+                            guidance_notes.append(person_note)
+
+                coherent_ctx_prompt = "\n\n".join(coherent_lines)
+                self.log(
+                    f"🔗 Coherent clip context applied (Part {s_idx}/{s_tot}, mode: {s_mode})",
+                    task_id=task.id
+                )
+
             timeout_sec = getattr(cfg, "ai_timeout_seconds", 600)
             analysis: VideoAnalysisResult
             if cfg.vision_provider == "ollama":
@@ -614,6 +707,7 @@ class QueueManager:
                     prompt_guidance=combined_guidance,
                     slug_guidance=combined_slug_guidance,
                     filename_context=filename_ctx_prompt,
+                    coherent_context=coherent_ctx_prompt,
                     timeout_seconds=timeout_sec,
                     num_ctx=ollama_ctx
                 )
@@ -631,6 +725,7 @@ class QueueManager:
                     prompt_guidance=combined_guidance,
                     slug_guidance=combined_slug_guidance,
                     filename_context=filename_ctx_prompt,
+                    coherent_context=coherent_ctx_prompt,
                     timeout_seconds=timeout_sec
                 )
             elif cfg.vision_provider == "cloud":
@@ -649,6 +744,7 @@ class QueueManager:
                     prompt_guidance=combined_guidance,
                     slug_guidance=combined_slug_guidance,
                     filename_context=filename_ctx_prompt,
+                    coherent_context=coherent_ctx_prompt,
                     timeout_seconds=timeout_sec
                 )
             else:
@@ -674,9 +770,15 @@ class QueueManager:
                     if detected_faces:
                         from src.media.faces import face_registry
                         detected_pids = [f.get("person_id") or f.get("id") for f in detected_faces if (f.get("person_id") or f.get("id"))]
+                        ai_people_for_matching = list(analysis.people_or_subjects)
+                        if getattr(task, "series_id", None):
+                            s_people = self._coherent_group_state.get(task.series_id, {}).get("people", [])
+                            for p in s_people:
+                                if p not in ai_people_for_matching:
+                                    ai_people_for_matching.append(p)
                         guessed = face_registry.correlate_and_guess_names(
                             detected_face_ids=detected_pids,
-                            ai_people_names=analysis.people_or_subjects,
+                            ai_people_names=ai_people_for_matching,
                             video_path=str(video_path.resolve()),
                             summary=analysis.summary
                         )
@@ -770,6 +872,25 @@ class QueueManager:
                                 task_id=task.id
                             )
 
+            # Update coherent series state with current clip results
+            if getattr(task, "series_id", None):
+                series_entry = self._coherent_group_state.setdefault(task.series_id, {})
+                series_entry["clips_completed"] = series_entry.get("clips_completed", 0) + 1
+                series_entry["previous_summary"] = analysis.summary
+                series_entry["previous_title"] = analysis.title
+                if not series_entry.get("series_title") and analysis.title:
+                    series_entry["series_title"] = analysis.title
+                existing_people = series_entry.setdefault("people", [])
+                for p in analysis.people_or_subjects:
+                    if p and p not in existing_people:
+                        existing_people.append(p)
+
+                # For same_event or both, ensure title reflects part if not already present
+                if getattr(task, "coherent_mode", "none") in ("same_event", "both") and getattr(task, "series_index", None):
+                    part_str = f"Part {task.series_index}"
+                    if part_str.lower() not in analysis.title.lower():
+                        analysis.title = f"{analysis.title} ({part_str})"
+
             # 5. Export sidecars
             task.stage = "Writing sidecars"
             task.progress = 85
@@ -858,6 +979,20 @@ class QueueManager:
                 date_order=task.filename_date_order or getattr(cfg, "filename_date_order", "auto")
             )
 
+            # If auto_enumerate is requested, append the enumeration suffix
+            if getattr(task, "auto_enumerate", False) and getattr(task, "series_index", None):
+                from src.media.renamer import format_enumeration
+                s_idx = task.series_index
+                s_tot = task.series_total or 1
+                s_style = getattr(task, "enum_style", "pt") or "pt"
+                enum_suffix = format_enumeration(s_idx, s_tot, s_style)
+                if enum_suffix:
+                    s_path = Path(suggested_name)
+                    stem = s_path.stem
+                    ext = s_path.suffix
+                    if not stem.endswith(enum_suffix):
+                        suggested_name = f"{stem}{enum_suffix}{ext}"
+
             # Ensure suggested_name is conflict-free and enumerated if needed
             unique_target, _ = resolve_unique_rename_target(video_path, suggested_name)
             suggested_name = unique_target.name
@@ -903,7 +1038,12 @@ class QueueManager:
                 "detected_date_in_context": analysis.detected_date_in_context,
                 "detected_date_evidence": analysis.detected_date_evidence,
                 "date_used": meta.get("creation_time"),
-                "date_source_used": meta.get("date_source_used")
+                "date_source_used": meta.get("date_source_used"),
+                "coherent_mode": task.coherent_mode,
+                "series_id": task.series_id,
+                "series_index": task.series_index,
+                "series_total": task.series_total,
+                "series_title": task.series_title or (self._coherent_group_state.get(task.series_id, {}).get("series_title") if task.series_id else None)
             }
             self.log(f"Successfully processed {video_path.name}", task_id=task.id)
 

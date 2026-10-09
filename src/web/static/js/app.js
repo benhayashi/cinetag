@@ -693,8 +693,9 @@ function renderQueueTable(tasks, currentTask) {
           ${isProcessing ? '▶' : (idx + 1)}
         </td>
         <td>
-          <div style="font-weight:600; color:var(--text-main); font-size:0.9rem;">
-            ${escapeHtml(t.filename)}
+          <div style="font-weight:600; color:var(--text-main); font-size:0.9rem; display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+            <span>${escapeHtml(t.filename)}</span>
+            ${t.series_id ? `<span class="badge" style="background:rgba(139,92,246,0.2); color:#c4b5fd; font-size:0.7rem; border:1px solid rgba(139,92,246,0.3); font-weight:500;" title="Part ${t.series_index || '1'} of ${t.series_total || '?'} in coherent series ${escapeHtml(t.series_title || '')}">🔗 Part ${t.series_index || '1'}/${t.series_total || '?'}</span>` : ''}
           </div>
           <div style="font-size:0.75rem; color:#94a3b8; word-break:break-all;" title="${escapeHtml(t.file_path)}">
             ${escapeHtml(parentPath)}
@@ -1122,7 +1123,6 @@ function renderLatestResult(task, isInspected = false) {
   }
 
   // Date proposal handling in Latest Result card
-  const latestProposalBanner = document.getElementById("latest-result-date-proposal-banner");
   const latestProposalText = document.getElementById("latest-date-proposal-text");
   const latestProposalEvidence = document.getElementById("latest-date-proposal-evidence");
   const btnLatestApply = document.getElementById("btn-latest-apply-date");
@@ -1442,6 +1442,16 @@ async function executeQueueAdd(filePaths, conflictMode, autoStart) {
     const batchFnDateOrderEl = document.getElementById("batch-filename-date-order");
     const fnDateOrder = batchFnDateOrderEl ? batchFnDateOrderEl.value : undefined;
 
+    // Coherent clip options
+    const coherentModeEl = document.getElementById("queue-coherent-mode");
+    const coherentMode = coherentModeEl ? coherentModeEl.value : "none";
+    const seriesTitleEl = document.getElementById("queue-series-title");
+    const seriesTitle = seriesTitleEl ? (seriesTitleEl.value.trim() || undefined) : undefined;
+    const autoEnumEl = document.getElementById("queue-auto-enumerate");
+    const autoEnumerate = autoEnumEl ? autoEnumEl.checked : false;
+    const enumStyleEl = document.getElementById("queue-enum-style");
+    const enumStyle = enumStyleEl ? enumStyleEl.value : "pt";
+
     const res = await fetch("/api/queue/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1453,7 +1463,11 @@ async function executeQueueAdd(filePaths, conflictMode, autoStart) {
         prompt_guidance: promptGuidance,
         slug_guidance: slugGuidance,
         use_filename_context: useFilenameCtx,
-        filename_date_order: fnDateOrder
+        filename_date_order: fnDateOrder,
+        coherent_mode: coherentMode,
+        series_title: seriesTitle,
+        auto_enumerate: autoEnumerate,
+        enum_style: enumStyle
       })
     });
     if (!res.ok) {
@@ -1500,6 +1514,41 @@ async function requestEnqueueWithConflictCheck(filePaths, autoStart = false) {
 
 // --- Queue Controls ---
 function initQueueControls() {
+  // Coherent Clip Mode & Enumeration listeners
+  const coherentModeEl = document.getElementById("queue-coherent-mode");
+  const autoEnumEl = document.getElementById("queue-auto-enumerate");
+  const coherentHintEl = document.getElementById("queue-coherent-hint");
+  const updateCoherentHint = () => {
+    if (!coherentHintEl) return;
+    const mode = coherentModeEl ? coherentModeEl.value : "none";
+    const isEnum = autoEnumEl ? autoEnumEl.checked : false;
+    if (mode === "same_event") {
+      coherentHintEl.innerHTML = `🎪 <b>Same Event / Story:</b> Preceding clip's narrative &amp; event context are carried forward. Clips are described as sequential parts (Part 1, Part 2...).${isEnum ? " <i>Sequential filenames enabled.</i>" : ""}`;
+    } else if (mode === "same_people") {
+      coherentHintEl.innerHTML = `👥 <b>Same Set of People:</b> Recognized individuals and faces are carried forward to preserve identity consistency across all clips in this batch.${isEnum ? " <i>Sequential filenames enabled.</i>" : ""}`;
+    } else if (mode === "both") {
+      coherentHintEl.innerHTML = `🌟 <b>Both (Event &amp; People):</b> Preserves continuous storyline narrative while maintaining recognized character identities across the batch.${isEnum ? " <i>Sequential filenames enabled.</i>" : ""}`;
+    } else {
+      if (isEnum) {
+        coherentHintEl.innerHTML = `🔢 <b>Independent clips with Sequential Enumeration:</b> Clips are processed independently, but filenames receive sequential numbering suffixes.`;
+      } else {
+        coherentHintEl.innerHTML = `⚪ <b>Independent clips:</b> Each video in queue is processed without memory of others.`;
+      }
+    }
+  };
+  if (coherentModeEl) {
+    coherentModeEl.addEventListener("change", () => {
+      // Auto-check auto-enumerate if user selects same_event or both
+      if ((coherentModeEl.value === "same_event" || coherentModeEl.value === "both") && autoEnumEl && !autoEnumEl.checked) {
+        autoEnumEl.checked = true;
+      }
+      updateCoherentHint();
+    });
+  }
+  if (autoEnumEl) {
+    autoEnumEl.addEventListener("change", updateCoherentHint);
+  }
+
   document.getElementById("btn-enqueue-selected").addEventListener("click", async () => {
     const selected = [];
     document.querySelectorAll(".file-select-chk:checked").forEach(chk => {
@@ -2149,13 +2198,18 @@ async function loadConfig() {
     const exportNfoEl = document.getElementById("cfg-export-nfo");
     if (exportNfoEl) exportNfoEl.checked = cfg.export_nfo !== false;
 
-    document.getElementById("cfg-export-txt").checked = cfg.export_txt;
-    document.getElementById("cfg-export-json").checked = cfg.export_info_json;
-    document.getElementById("cfg-export-xmp").checked = cfg.export_xmp;
+    const expTxt = document.getElementById("cfg-export-txt");
+    if (expTxt) expTxt.checked = !!cfg.export_txt;
+    const expJson = document.getElementById("cfg-export-json");
+    if (expJson) expJson.checked = !!cfg.export_info_json;
+    const expXmp = document.getElementById("cfg-export-xmp");
+    if (expXmp) expXmp.checked = !!cfg.export_xmp;
     const exportSrtEl = document.getElementById("cfg-export-srt");
     if (exportSrtEl) exportSrtEl.checked = cfg.export_srt !== false;
-    document.getElementById("cfg-export-edl").checked = cfg.export_edl;
-    document.getElementById("cfg-enable-tagging").checked = cfg.enable_in_file_tagging;
+    const expEdl = document.getElementById("cfg-export-edl");
+    if (expEdl) expEdl.checked = !!cfg.export_edl;
+    const expTag = document.getElementById("cfg-enable-tagging");
+    if (expTag) expTag.checked = !!cfg.enable_in_file_tagging;
 
     const retentionEl = document.getElementById("cfg-temp-retention");
     if (retentionEl) retentionEl.value = cfg.temp_retention_policy || "immediate";
