@@ -106,6 +106,13 @@ class OllamaVisionProvider(BaseVisionProvider):
             else:
                 active_ctx = target_ctx
 
+        user_msg = {
+            "role": "user",
+            "content": user_text
+        }
+        if b64_images:
+            user_msg["images"] = b64_images
+
         payload = {
             "model": chosen_model,
             "messages": [
@@ -113,11 +120,7 @@ class OllamaVisionProvider(BaseVisionProvider):
                     "role": "system",
                     "content": active_system_prompt
                 },
-                {
-                    "role": "user",
-                    "content": user_text,
-                    "images": b64_images
-                }
+                user_msg
             ],
             "stream": False,
             "format": "json",

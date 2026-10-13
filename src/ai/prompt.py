@@ -47,6 +47,71 @@ def get_system_prompt(custom_prompt: Optional[str] = None) -> str:
         return custom_prompt.strip()
     return DEFAULT_SYSTEM_PROMPT
 
+REFINEMENT_SYSTEM_PROMPT = """You are an expert video archivist and editor assistant.
+You are refining and improving existing video metadata based on user feedback, user-provided details/corrections, and/or an updated audio transcript.
+
+You must respond in valid JSON with the following structure:
+{
+  "title": "Brief descriptive title (3-5 words in title case)",
+  "summary": "Thorough paragraph explaining who is there, what happens, incorporating the user's guidance and dialogue context.",
+  "events": [
+    {
+      "timecode": "00:00",
+      "description": "Short description of event",
+      "is_highlight": false
+    }
+  ],
+  "tags": ["relevant", "keywords"],
+  "people_or_subjects": ["Identified people"],
+  "animals_or_pets": ["Identified animals or pets"],
+  "objects": ["Physical objects or gear"],
+  "suggested_filename": "concise_slug_incorporating_updates"
+}
+
+Important Rules:
+1. Accurately integrate the user's feedback, notes, and corrections.
+2. Incorporate any newly provided dialogue or audio transcript into the summary, title, and tags.
+3. Preserve established accurate details from the original analysis while correcting inaccuracies identified by the user.
+4. Keep titles concise (3-5 words in title case).
+5. Output ONLY the raw JSON object.
+"""
+
+def build_refinement_prompt(
+    current_title: str,
+    current_summary: str,
+    current_tags: Optional[List[str]] = None,
+    current_people: Optional[List[str]] = None,
+    current_animals: Optional[List[str]] = None,
+    current_objects: Optional[List[str]] = None,
+    user_guidance: Optional[str] = None,
+    audio_transcript: Optional[str] = None,
+    events: Optional[List[Any]] = None
+) -> str:
+    parts = ["Please refine the metadata for this video clip based on the information below:"]
+    parts.append("\n--- CURRENT METADATA ---")
+    parts.append(f"Title: {current_title}")
+    parts.append(f"Summary: {current_summary}")
+    if current_tags:
+        parts.append(f"Tags: {', '.join(current_tags)}")
+    if current_people:
+        parts.append(f"People: {', '.join(current_people)}")
+    if current_animals:
+        parts.append(f"Animals/Pets: {', '.join(current_animals)}")
+    if current_objects:
+        parts.append(f"Objects/Gear: {', '.join(current_objects)}")
+
+    if audio_transcript and audio_transcript.strip():
+        parts.append("\n--- AUDIO TRANSCRIPT / DIALOGUE ---")
+        parts.append(f"\"{audio_transcript.strip()}\"")
+
+    if user_guidance and user_guidance.strip():
+        parts.append("\n--- USER GUIDANCE / CORRECTIONS / ADDITIONAL DETAILS ---")
+        parts.append(user_guidance.strip())
+        parts.append("CRITICAL: Apply the user's guidance and specific corrections to update the title, summary, people, and tags.")
+
+    parts.append("\nPlease output the updated JSON metadata analysis.")
+    return "\n".join(parts)
+
 def build_user_prompt(
     timestamps: List[str],
     audio_transcript: Optional[str] = None,
@@ -57,7 +122,10 @@ def build_user_prompt(
     filename_context: Optional[str] = None,
     coherent_context: Optional[str] = None
 ) -> str:
-    parts = ["Here are the sampled video frames taken at timestamps: " + ", ".join(timestamps) + "."]
+    if timestamps:
+        parts = ["Here are the sampled video frames taken at timestamps: " + ", ".join(timestamps) + "."]
+    else:
+        parts = ["This is a text-based analysis and metadata refinement request for the video clip."]
     
     if subtitle_dialogue and subtitle_dialogue.strip():
         parts.append(f"\nSubtitles dialogue (from accompanying .srt or embedded track):\n\"\"\"\n{subtitle_dialogue.strip()}\n\"\"\"")

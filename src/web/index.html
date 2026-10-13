@@ -1613,7 +1613,7 @@
     <div class="modal-dialog">
       <div class="modal-header flex-between">
         <div>
-          <h2 id="results-modal-title">🎞️ Video Analysis Results</h2>
+          <h2 id="results-modal-title">📝 Review & Edit Metadata</h2>
           <span id="results-modal-filename" class="text-muted" style="font-size:0.85rem;"></span>
         </div>
         <button id="btn-close-results-modal" class="modal-close-btn" title="Close">&times;</button>
@@ -1640,12 +1640,12 @@
         <!-- Title & Suggested Filename -->
         <div class="results-field-group">
           <div class="flex-between" style="align-items:center;">
-            <label class="results-label" style="margin-bottom:0;">AI Title & Suggested Filename</label>
+            <label class="results-label" style="margin-bottom:0;">Title & Suggested Filename</label>
             <button id="btn-modal-rename-clip" class="btn btn-sm btn-secondary" style="font-size:0.8rem; padding:0.25rem 0.65rem;" title="Rename this video and its support files">✏️ Rename</button>
           </div>
           <div class="results-title-box mt-1">
-            <h3 id="results-display-title"></h3>
-            <div id="results-suggested-name-box" class="mt-1">
+            <input type="text" id="results-display-title" class="form-control" style="font-size:1.1rem; font-weight:600; color:#f8fafc; background:rgba(15,23,42,0.6);" placeholder="Video Title...">
+            <div id="results-suggested-name-box" class="mt-2">
               <span class="text-muted" style="font-size:0.8rem;">Suggested Name: </span>
               <code id="results-suggested-name" style="color:#38bdf8; font-size:0.85rem;"></code>
             </div>
@@ -1654,8 +1654,11 @@
 
         <!-- Description / Summary -->
         <div class="results-field-group mt-3">
-          <label class="results-label">Content Summary & Description</label>
-          <div id="results-display-summary" class="results-summary-text"></div>
+          <div class="flex-between">
+            <label class="results-label">Content Summary & Description</label>
+            <small class="text-muted" style="font-size:0.75rem;">Directly editable</small>
+          </div>
+          <textarea id="results-display-summary" class="form-control mt-1 results-summary-text" rows="3" style="font-size:0.9rem; line-height:1.45; background:rgba(15,23,42,0.6); resize:vertical;" placeholder="Video summary and narrative description..."></textarea>
         </div>
 
         <!-- Key Moments / Events -->
@@ -1670,21 +1673,29 @@
         <div class="results-field-group mt-3">
           <div class="flex-between">
             <label class="results-label">Keywords / Tags</label>
-            <button id="btn-copy-tags" class="btn btn-sm btn-primary">📋 Copy Tags</button>
+            <button id="btn-copy-tags" class="btn btn-sm btn-secondary" style="font-size:0.8rem; padding:0.2rem 0.6rem;">📋 Copy Tags</button>
           </div>
-          <input type="text" id="results-display-tags" class="form-control mt-1" readonly placeholder="No tags extracted">
+          <input type="text" id="results-display-tags" class="form-control mt-1" placeholder="e.g. birthday, summer, backyard (comma separated)">
           <div id="results-tags-pills" class="tags-pills mt-2"></div>
         </div>
 
         <!-- Detected Subjects / People -->
-        <div id="results-group-people" class="results-field-group mt-3 hidden">
-          <label class="results-label">👥 People & Identified Subjects</label>
+        <div id="results-group-people" class="results-field-group mt-3">
+          <div class="flex-between">
+            <label class="results-label">👥 People & Identified Subjects</label>
+            <small class="text-muted" style="font-size:0.75rem;">Comma separated</small>
+          </div>
+          <input type="text" id="results-input-people" class="form-control mt-1" placeholder="e.g. John Doe, Sarah Smith">
           <div id="results-display-people" class="tags-pills mt-1"></div>
         </div>
 
         <!-- Detected Animals & Pets -->
-        <div id="results-group-animals" class="results-field-group mt-3 hidden">
-          <label class="results-label">🐕 Animals & Pets (Dogs, Breeds, Cats)</label>
+        <div id="results-group-animals" class="results-field-group mt-3">
+          <div class="flex-between">
+            <label class="results-label">🐕 Animals & Pets</label>
+            <small class="text-muted" style="font-size:0.75rem;">Comma separated</small>
+          </div>
+          <input type="text" id="results-input-animals" class="form-control mt-1" placeholder="e.g. Golden Retriever, Beagle, Tabby Cat">
           <div id="results-display-animals" class="tags-pills mt-1"></div>
         </div>
 
@@ -1702,12 +1713,44 @@
         </div>
 
         <!-- Audio Transcript / Subtitles -->
-        <div id="results-group-transcript" class="results-field-group mt-3 hidden">
-          <div class="flex-between">
-            <label class="results-label" id="results-transcript-label">Transcribed Speech / Dialogue</label>
-            <span id="results-transcript-badge" class="badge-tag processed" style="font-size: 0.75rem;">Whisper</span>
+        <div id="results-group-transcript" class="results-field-group mt-3">
+          <div class="flex-between" style="align-items:center;">
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <label class="results-label" id="results-transcript-label" style="margin-bottom:0;">Speech / Dialogue Transcript</label>
+              <span id="results-transcript-badge" class="badge-tag processed" style="font-size: 0.75rem;">Whisper</span>
+            </div>
+            <div style="display:flex; gap:0.4rem; align-items:center;">
+              <select id="review-whisper-task" class="form-select form-select-sm" style="font-size:0.75rem; padding:0.2rem 0.4rem; background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:4px;">
+                <option value="transcribe">Transcribe</option>
+                <option value="translate">Translate to English</option>
+              </select>
+              <button id="btn-review-retranscribe" type="button" class="btn btn-sm btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.55rem;" title="Re-run Whisper audio transcription or translation on this clip">🎙️ Re-run Whisper</button>
+            </div>
           </div>
-          <div id="results-display-transcript" class="results-transcript"></div>
+          <textarea id="results-display-transcript" class="form-control mt-1 results-transcript" rows="3" style="font-size:0.85rem; line-height:1.4; background:rgba(15,23,42,0.6); resize:vertical;" placeholder="No speech or dialogue recorded..."></textarea>
+          <div id="review-whisper-status" class="text-muted mt-1" style="font-size:0.75rem;"></div>
+        </div>
+
+        <!-- Fast AI Refinement & User Guidance -->
+        <div class="results-field-group mt-3" style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 0.85rem 1rem;">
+          <div class="flex-between" style="align-items:center;">
+            <label class="results-label" style="color:#38bdf8; margin-bottom:0.2rem;">✨ User Guidance / Notes for AI Refinement</label>
+            <span class="text-muted" style="font-size:0.75rem;">Fast text re-analysis</span>
+          </div>
+          <p style="font-size:0.8rem; color:#94a3b8; margin:0 0 0.5rem 0;">Provide corrections, missing names, event context, or instructions for the AI to refine this clip's metadata:</p>
+          <textarea id="review-user-guidance" class="form-control" rows="2" style="font-size:0.85rem; background:rgba(15,23,42,0.7);" placeholder="e.g. 'Add Aunt Clara in people', 'It was a birthday party in 2004', 'Incorporate dialogue into summary'"></textarea>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.6rem; flex-wrap:wrap; gap:0.5rem;">
+            <small id="review-refine-status" class="text-muted" style="font-size:0.8rem;"></small>
+            <button id="btn-review-refine-ai" type="button" class="btn btn-sm btn-primary" style="background:#0284c7; border-color:#0369a1; font-weight:600; font-size:0.82rem;">✨ Refine with AI (Text-Only)</button>
+          </div>
+        </div>
+
+        <!-- Action / Save Bar -->
+        <div style="display:flex; justify-content:space-between; align-items:center; background:#1e293b; padding:0.75rem 1rem; border-radius:8px; margin-top:1.25rem; border:1px solid #334155; flex-wrap:wrap; gap:0.5rem;">
+          <span id="review-save-status" style="font-size:0.85rem; color:#94a3b8;">Edit fields above or refine with AI, then save sidecars.</span>
+          <div style="display:flex; gap:0.5rem;">
+            <button id="btn-review-save-manual" type="button" class="btn btn-sm btn-primary" style="font-weight:600;">💾 Save Changes</button>
+          </div>
         </div>
 
         <hr class="divider mt-4">
@@ -2175,6 +2218,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=2.6.0"></script>
+  <script src="/static/js/app.js?v=2.7.0"></script>
 </body>
 </html>

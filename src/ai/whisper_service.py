@@ -52,10 +52,52 @@ def normalize_whisper_model_name(name: Optional[str]) -> str:
         return "large-v3-turbo"
     return n
 
+def sanitize_repetitive_text(text: str, max_repeats: int = 2) -> str:
+    """
+    Suppresses internal word and phrase loops within transcribed text (common in Whisper hallucinations).
+    E.g.: 'Thank you. Thank you. Thank you. Thank you.' -> 'Thank you. Thank you.'
+    or 'yeah yeah yeah yeah yeah' -> 'yeah yeah'
+    """
+    if not text or not text.strip():
+        return ""
+
+    import re
+
+    # 1. Deduplicate consecutive identical sentences/clauses
+    chunks = re.split(r"(?<=[.?!])\s+", text.strip())
+    cleaned_chunks = []
+    last_norm = None
+    rep_count = 0
+
+    for c in chunks:
+        norm = re.sub(r"[^\w\s]", "", c).strip().lower()
+        if not norm:
+            continue
+        if norm == last_norm:
+            rep_count += 1
+            if rep_count < max_repeats:
+                cleaned_chunks.append(c)
+        else:
+            last_norm = norm
+            rep_count = 0
+            cleaned_chunks.append(c)
+
+    cleaned = " ".join(cleaned_chunks)
+
+    # 2. Word loops within phrases (e.g. yeah yeah yeah yeah)
+    word_pattern = re.compile(r"\b([A-Za-z0-9\'-]+)(?:\s+\1\b){2,}", re.IGNORECASE)
+    def _trunc_word(m):
+        w = m.group(1)
+        return " ".join([w] * max_repeats)
+
+    cleaned = word_pattern.sub(_trunc_word, cleaned)
+
+    return cleaned.strip()
+
 def sanitize_repetitive_segments(segments: list[Dict[str, Any]], max_consecutive_repeats: int = 2) -> list[Dict[str, Any]]:
     """
     Filter out hallucination loops where Whisper repeatedly emits the exact same phrase
-    or sentence over consecutive segments (e.g. across silence, music, or audio glitches).
+    or sentence over consecutive segments, or internal repetition within a segment.
     """
     if not segments:
         return []
@@ -74,20 +116,28 @@ def sanitize_repetitive_segments(segments: list[Dict[str, Any]], max_consecutive
         if not raw_text:
             continue
 
-        norm = normalize_text(raw_text)
+        # Clean internal loops first
+        sanitized_seg_text = sanitize_repetitive_text(raw_text, max_repeats=max_consecutive_repeats)
+        if not sanitized_seg_text:
+            continue
+
+        norm = normalize_text(sanitized_seg_text)
         if not norm:
             continue
+
+        seg_copy = dict(seg)
+        seg_copy["text"] = sanitized_seg_text
 
         if norm == last_normalized_text:
             repeat_count += 1
             if repeat_count < max_consecutive_repeats:
-                cleaned.append(seg)
+                cleaned.append(seg_copy)
             else:
                 logger.debug(f"[Whisper] Suppressed repetitive hallucinated segment: {raw_text!r}")
         else:
             last_normalized_text = norm
             repeat_count = 0
-            cleaned.append(seg)
+            cleaned.append(seg_copy)
 
     return cleaned
 
@@ -602,8 +652,8 @@ class WhisperTranscriptionService:
 
             # Estimate duration in seconds from audio size (16kHz 16-bit mono PCM is ~32 KB/sec)
             est_audio_seconds = (len(audio_bytes) / 1024.0) / 32.0
-            # Allow at least 600s (10 min), and scale generously with audio length (est_audio_seconds * 1.5 + 300s buffer, up to 3600s / 1 hr)
-            request_timeout = max(600.0, min(3600.0, est_audio_seconds * 1.5 + 300.0))
+            # Responsive timeout: minimum 45s, scale with audio length (est_audio_seconds * 1.5 + 45s), cap at 900s (15 min)
+            request_timeout = max(45.0, min(900.0, est_audio_seconds * 1.5 + 45.0))
 
             with httpx.Client(timeout=request_timeout) as client:
                 res = None
@@ -734,6 +784,8 @@ class WhisperTranscriptionService:
                     seg_list = sanitize_repetitive_segments(seg_list)
                     if raw_text:
                         raw_text = " ".join(s["text"] for s in seg_list).strip()
+                elif raw_text:
+                    raw_text = sanitize_repetitive_text(raw_text)
 
                 final_text = raw_text.strip() if raw_text else None
                 if final_text:

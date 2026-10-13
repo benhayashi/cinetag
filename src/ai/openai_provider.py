@@ -89,11 +89,13 @@ class OpenAICompatibleVisionProvider(BaseVisionProvider):
                         }
                     })
 
+        user_content = content_parts if len(content_parts) > 1 else user_text
+
         payload = {
             "model": chosen_model,
             "messages": [
                 {"role": "system", "content": active_system_prompt},
-                {"role": "user", "content": content_parts}
+                {"role": "user", "content": user_content}
             ],
             "temperature": 0.2
         }

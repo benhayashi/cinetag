@@ -37,6 +37,9 @@ from src.ai.ollama_provider import OllamaVisionProvider
 from src.ai.openai_provider import OpenAICompatibleVisionProvider
 from src.ai.cloud_provider import CloudVisionProvider
 from src.ai.whisper_service import WhisperTranscriptionService
+from src.ai.base import VideoAnalysisResult, TimestampEvent
+from src.ai.prompt import build_refinement_prompt, REFINEMENT_SYSTEM_PROMPT
+from src.media.sampler import extract_audio
 from src.server.queue_manager import manager
 
 
@@ -2288,6 +2291,395 @@ def update_video_objects(req: UpdateObjectsRequest):
         "status": "ok",
         "objects": clean_objects,
         "message": f"Updated {len(clean_objects)} object tags across sidecars"
+    }
+
+def resolve_video_path(file_path: str) -> Path:
+    uploads_dir = get_uploads_dir()
+    p = Path(file_path)
+    if not p.is_absolute() or not p.exists():
+        cand = uploads_dir / p.name
+        if cand.exists():
+            p = cand
+
+    if not p.exists():
+        task_match = next(
+            (t for t in manager.queue if t.file_path == str(p.resolve()) or (t.result and t.result.get("final_file_path") == str(p.resolve()))),
+            None
+        )
+        if task_match:
+            if task_match.result and task_match.result.get("final_file_path"):
+                cand = Path(task_match.result["final_file_path"])
+                if cand.exists():
+                    p = cand
+            elif Path(task_match.file_path).exists():
+                p = Path(task_match.file_path)
+
+    if not p.exists() or not p.is_file():
+        raise HTTPException(status_code=404, detail=f"Video file not found: {file_path}")
+    return p
+
+def parse_str_or_list(val: Optional[Union[List[str], str]]) -> List[str]:
+    if not val:
+        return []
+    if isinstance(val, str):
+        return [item.strip() for item in val.split(",") if item.strip()]
+    return [str(item).strip() for item in val if str(item).strip()]
+
+def sync_metadata_sidecars(video_path: Path, result: VideoAnalysisResult, cfg: AppConfig):
+    from src.exporters.sidecars import write_info_json_sidecar, write_txt_sidecar, write_xmp_sidecar
+    from src.exporters.nfo import write_nfo_sidecar
+
+    parent = video_path.parent
+    stem = video_path.stem
+    name = video_path.name
+
+    video_meta = {}
+    json_candidates = [parent / f"{stem}.info.json", parent / f"{name}.info.json"]
+    json_p = next((f for f in json_candidates if f.exists()), None)
+    if json_p:
+        try:
+            with open(json_p, "r", encoding="utf-8") as jf:
+                prev = json.load(jf)
+                video_meta = prev.get("file", {}).get("metadata", {})
+        except Exception:
+            pass
+
+    # 1. Update info.json
+    write_info_json_sidecar(video_path, result, video_meta=video_meta, conflict_mode="overwrite")
+
+    # 2. Update .txt
+    txt_candidates = [parent / f"{stem}.txt", parent / f"{name}.txt"]
+    txt_exists = any(f.exists() for f in txt_candidates)
+    if txt_exists or getattr(cfg, "export_txt", True):
+        write_txt_sidecar(video_path, result, video_meta=video_meta, conflict_mode="overwrite")
+
+    # 3. Update .xmp
+    xmp_candidates = [parent / f"{stem}.xmp", parent / f"{name}.xmp"]
+    xmp_exists = any(f.exists() for f in xmp_candidates)
+    if xmp_exists or getattr(cfg, "export_xmp", True):
+        write_xmp_sidecar(video_path, result, video_meta=video_meta, conflict_mode="overwrite")
+
+    # 4. Update .nfo
+    nfo_candidates = [parent / f"{stem}.nfo", parent / f"{name}.nfo"]
+    nfo_exists = any(f.exists() for f in nfo_candidates)
+    if nfo_exists or getattr(cfg, "export_nfo", False):
+        try:
+            write_nfo_sidecar(video_path, result, video_meta=video_meta, conflict_mode="overwrite")
+        except Exception as e:
+            logger.warning(f"Error updating NFO sidecar: {e}")
+
+    # 5. Update .srt
+    if result.audio_transcript and getattr(cfg, "export_srt", True):
+        from src.media.subtitles import generate_srt_from_text, write_srt_sidecar
+        srt_body = generate_srt_from_text(text=result.audio_transcript, total_duration=video_meta.get("duration"))
+        if srt_body.strip():
+            write_srt_sidecar(video_path, srt_body, conflict_mode="overwrite")
+
+    # 6. Update QueueManager item in memory
+    task_match = next(
+        (t for t in manager.queue if t.file_path == str(video_path.resolve()) or (t.result and t.result.get("final_file_path") == str(video_path.resolve()))),
+        None
+    )
+    if task_match and task_match.result:
+        task_match.result["title"] = result.title
+        task_match.result["summary"] = result.summary
+        task_match.result["tags"] = result.tags
+        task_match.result["people"] = result.people_or_subjects
+        task_match.result["animals_or_pets"] = result.animals_or_pets
+        task_match.result["objects"] = result.objects
+        if result.audio_transcript:
+            task_match.result["audio_transcript"] = result.audio_transcript
+
+def get_ai_provider(cfg: AppConfig):
+    if cfg.vision_provider == "ollama":
+        ollama_ctx = getattr(cfg, "ollama_num_ctx", 16384)
+        return OllamaVisionProvider(
+            base_url=cfg.ollama_url,
+            default_model=cfg.ollama_model,
+            default_num_ctx=ollama_ctx
+        )
+    elif cfg.vision_provider == "openai_compatible":
+        return OpenAICompatibleVisionProvider(
+            base_url=cfg.openai_compatible_url,
+            api_key=cfg.openai_compatible_api_key,
+            default_model=cfg.openai_compatible_model
+        )
+    elif cfg.vision_provider == "cloud":
+        return CloudVisionProvider(
+            provider=cfg.cloud_provider,
+            api_keys=cfg.api_keys,
+            default_model=getattr(cfg, "cloud_model", None),
+            custom_endpoint=getattr(cfg, "custom_openai_url", None)
+        )
+    else:
+        raise ValueError(f"Unknown vision provider: {cfg.vision_provider}")
+
+class RetranscribeRequest(BaseModel):
+    file_path: str
+    task: Optional[str] = "transcribe"
+    language: Optional[str] = None
+    model: Optional[str] = None
+
+@router.post("/review/retranscribe")
+def review_retranscribe(req: RetranscribeRequest):
+    """
+    Re-run Whisper audio transcription or translation on an already processed or selected video.
+    Synchronizes new transcript into .info.json and .srt sidecars.
+    """
+    video_path = resolve_video_path(req.file_path)
+    cfg = load_config()
+
+    if cfg.whisper_backend == "none":
+        raise HTTPException(status_code=400, detail="Whisper is disabled in settings.")
+
+    wav_path = extract_audio(video_path, custom_ffmpeg=cfg.ffmpeg_path)
+    if not wav_path or not wav_path.exists():
+        raise HTTPException(status_code=400, detail="Could not extract audio track (video may have no audio stream).")
+
+    chosen_task = req.task or cfg.whisper_task or "transcribe"
+    chosen_lang = req.language or cfg.whisper_language
+    chosen_model = req.model or cfg.whisper_model
+
+    service = WhisperTranscriptionService(
+        backend=cfg.whisper_backend,
+        model_name=chosen_model,
+        remote_url=cfg.whisper_remote_url,
+        api_key=cfg.whisper_api_key,
+        language=chosen_lang,
+        task=chosen_task,
+        device=cfg.whisper_device,
+        device_index=cfg.whisper_device_index,
+        compute_type=cfg.whisper_compute_type
+    )
+
+    detail = service.transcribe_detailed(wav_path)
+    if detail.get("error"):
+        raise HTTPException(status_code=500, detail=detail["error"])
+
+    new_transcript = detail.get("text") or ""
+    segments = detail.get("segments") or []
+
+    # Update .info.json
+    parent = video_path.parent
+    stem = video_path.stem
+    name = video_path.name
+    json_candidates = [parent / f"{stem}.info.json", parent / f"{name}.info.json"]
+    json_p = next((f for f in json_candidates if f.exists()), None)
+    if json_p:
+        try:
+            with open(json_p, "r", encoding="utf-8") as jf:
+                jdata = json.load(jf)
+            analysis = jdata.setdefault("analysis", {})
+            analysis["audio_transcript"] = new_transcript
+            with open(json_p, "w", encoding="utf-8") as jf:
+                json.dump(jdata, jf, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"Error updating JSON transcript: {e}")
+
+    # Write SRT
+    if new_transcript:
+        from src.media.subtitles import generate_srt_from_text, write_srt_sidecar
+        srt_body = generate_srt_from_text(text=new_transcript, segments=segments)
+        if srt_body.strip():
+            write_srt_sidecar(video_path, srt_body, conflict_mode="overwrite")
+
+    # Update QueueManager item in memory
+    task_match = next(
+        (t for t in manager.queue if t.file_path == str(video_path.resolve()) or (t.result and t.result.get("final_file_path") == str(video_path.resolve()))),
+        None
+    )
+    if task_match and task_match.result:
+        task_match.result["audio_transcript"] = new_transcript
+
+    return {
+        "status": "ok",
+        "audio_transcript": new_transcript,
+        "segments": segments,
+        "task": chosen_task,
+        "message": f"Successfully transcribed {len(new_transcript)} characters."
+    }
+
+class SaveManualReviewRequest(BaseModel):
+    file_path: str
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    tags: Optional[Union[List[str], str]] = None
+    people: Optional[Union[List[str], str]] = None
+    animals: Optional[Union[List[str], str]] = None
+    objects: Optional[Union[List[str], str]] = None
+    audio_transcript: Optional[str] = None
+
+@router.post("/review/save-manual")
+def review_save_manual(req: SaveManualReviewRequest):
+    """
+    Directly update metadata (title, summary, tags, people, animals, objects, transcript)
+    and sync changes across .info.json, .txt, .xmp, .nfo, and .srt sidecars.
+    """
+    video_path = resolve_video_path(req.file_path)
+    cfg = load_config()
+
+    parent = video_path.parent
+    stem = video_path.stem
+    name = video_path.name
+    json_candidates = [parent / f"{stem}.info.json", parent / f"{name}.info.json"]
+    json_p = next((f for f in json_candidates if f.exists()), None)
+
+    existing_events = []
+    existing_suggested_filename = ""
+    existing_detected_date = None
+    existing_detected_date_evidence = None
+    existing_provider = ""
+    existing_model = ""
+
+    if json_p:
+        try:
+            with open(json_p, "r", encoding="utf-8") as jf:
+                prev_data = json.load(jf).get("analysis", {})
+                existing_events = [TimestampEvent(**ev) for ev in prev_data.get("events", []) if isinstance(ev, dict)]
+                existing_suggested_filename = prev_data.get("suggested_filename", "")
+                existing_detected_date = prev_data.get("detected_date_in_context")
+                existing_detected_date_evidence = prev_data.get("detected_date_evidence")
+                existing_provider = prev_data.get("provider", "")
+                existing_model = prev_data.get("model", "")
+        except Exception:
+            pass
+
+    clean_title = (req.title or "").strip() or video_path.stem
+    clean_summary = (req.summary or "").strip()
+    clean_tags = parse_str_or_list(req.tags)
+    clean_people = parse_str_or_list(req.people)
+    clean_animals = parse_str_or_list(req.animals)
+    clean_objects = parse_str_or_list(req.objects)
+    clean_transcript = (req.audio_transcript or "").strip() if req.audio_transcript is not None else None
+
+    result = VideoAnalysisResult(
+        title=clean_title,
+        summary=clean_summary,
+        events=existing_events,
+        tags=clean_tags,
+        people_or_subjects=clean_people,
+        animals_or_pets=clean_animals,
+        objects=clean_objects,
+        suggested_filename=existing_suggested_filename,
+        detected_date_in_context=existing_detected_date,
+        detected_date_evidence=existing_detected_date_evidence,
+        audio_transcript=clean_transcript,
+        provider_name=existing_provider,
+        model_name=existing_model
+    )
+
+    sync_metadata_sidecars(video_path, result, cfg)
+
+    return {
+        "status": "ok",
+        "message": "Metadata saved successfully across sidecars",
+        "analysis": {
+            "title": result.title,
+            "summary": result.summary,
+            "tags": result.tags,
+            "people": result.people_or_subjects,
+            "animals_or_pets": result.animals_or_pets,
+            "objects": result.objects,
+            "audio_transcript": result.audio_transcript
+        }
+    }
+
+class RefineAiRequest(BaseModel):
+    file_path: str
+    user_guidance: Optional[str] = None
+    current_title: Optional[str] = None
+    current_summary: Optional[str] = None
+    tags: Optional[Union[List[str], str]] = None
+    people: Optional[Union[List[str], str]] = None
+    animals: Optional[Union[List[str], str]] = None
+    objects: Optional[Union[List[str], str]] = None
+    audio_transcript: Optional[str] = None
+
+@router.post("/review/refine-ai")
+def review_refine_ai(req: RefineAiRequest):
+    """
+    Perform fast text-only LLM refinement of video metadata incorporating user guidance
+    and/or updated transcript without re-extracting video frames.
+    """
+    video_path = resolve_video_path(req.file_path)
+    cfg = load_config()
+
+    parent = video_path.parent
+    stem = video_path.stem
+    name = video_path.name
+    json_candidates = [parent / f"{stem}.info.json", parent / f"{name}.info.json"]
+    json_p = next((f for f in json_candidates if f.exists()), None)
+
+    existing_events = []
+    existing_detected_date = None
+    existing_detected_date_evidence = None
+
+    if json_p:
+        try:
+            with open(json_p, "r", encoding="utf-8") as jf:
+                prev_data = json.load(jf).get("analysis", {})
+                existing_events = [TimestampEvent(**ev) for ev in prev_data.get("events", []) if isinstance(ev, dict)]
+                existing_detected_date = prev_data.get("detected_date_in_context")
+                existing_detected_date_evidence = prev_data.get("detected_date_evidence")
+        except Exception:
+            pass
+
+    clean_tags = parse_str_or_list(req.tags)
+    clean_people = parse_str_or_list(req.people)
+    clean_animals = parse_str_or_list(req.animals)
+    clean_objects = parse_str_or_list(req.objects)
+
+    refinement_prompt = build_refinement_prompt(
+        current_title=req.current_title or video_path.stem,
+        current_summary=req.current_summary or "",
+        current_tags=clean_tags,
+        current_people=clean_people,
+        current_animals=clean_animals,
+        current_objects=clean_objects,
+        user_guidance=req.user_guidance,
+        audio_transcript=req.audio_transcript,
+        events=existing_events
+    )
+
+    provider = get_ai_provider(cfg)
+    timeout_sec = getattr(cfg, "ai_timeout_seconds", 60)
+
+    try:
+        refined_result = provider.describe_video(
+            frames=[],
+            audio_transcript=req.audio_transcript,
+            context_prompt=refinement_prompt,
+            system_prompt=REFINEMENT_SYSTEM_PROMPT,
+            timeout_seconds=min(120, timeout_sec)
+        )
+    except Exception as e:
+        logger.error(f"AI refinement failed: {e}")
+        raise HTTPException(status_code=500, detail=f"AI refinement failed: {e}")
+
+    # Preserve events and dates if not re-emitted
+    if not refined_result.events and existing_events:
+        refined_result.events = existing_events
+    if not refined_result.detected_date_in_context and existing_detected_date:
+        refined_result.detected_date_in_context = existing_detected_date
+        refined_result.detected_date_evidence = existing_detected_date_evidence
+    if req.audio_transcript and not refined_result.audio_transcript:
+        refined_result.audio_transcript = req.audio_transcript
+
+    sync_metadata_sidecars(video_path, refined_result, cfg)
+
+    return {
+        "status": "ok",
+        "message": "AI successfully refined metadata",
+        "analysis": {
+            "title": refined_result.title,
+            "summary": refined_result.summary,
+            "tags": refined_result.tags,
+            "people": refined_result.people_or_subjects,
+            "animals_or_pets": refined_result.animals_or_pets,
+            "objects": refined_result.objects,
+            "suggested_filename": refined_result.suggested_filename,
+            "audio_transcript": refined_result.audio_transcript
+        }
     }
 
 @router.get("/results")

@@ -498,7 +498,7 @@ async function pollUploads() {
         : `<span class="text-muted"><small>${item.status === 'failed' ? 'Failed' : 'Generating...'}</small></span>`;
 
       const viewResultsHtml = isCompleted
-        ? `<button class="btn-view-results" onclick="openResultsModal('${escapeHtml(item.path)}')">👁️ View Results</button>`
+        ? `<button class="btn-view-results" onclick="openResultsModal('${escapeHtml(item.path)}')">📝 Review</button>`
         : '';
 
       const srtBadge = item.has_srt 
@@ -667,7 +667,7 @@ function renderQueueTable(tasks, currentTask) {
     } else if (t.status === "completed") {
       actionsHtml = `
         <div style="display:flex; gap:4px; align-items:center; justify-content:flex-end;">
-          <button class="btn btn-sm btn-secondary" onclick="openResultsModalByTaskId('${t.id}')" title="View Analysis Results">👁️ View</button>
+          <button class="btn btn-sm btn-secondary" onclick="openResultsModalByTaskId('${t.id}')" title="Review & Edit Analysis Metadata">📝 Review</button>
           <button class="btn btn-sm btn-secondary" onclick="openRenameModalByTaskId('${t.id}')" title="Rename video and all support files">✏️ Rename</button>
           <button class="btn btn-sm btn-danger-outline" onclick="removeQueueItem('${t.id}')" title="Remove from queue list" style="padding:2px 6px;">✕</button>
         </div>
@@ -1346,7 +1346,7 @@ function renderScannedTable() {
 
   tbody.innerHTML = scannedVideos.map((v, idx) => {
     const statusBadge = v.has_sidecar 
-      ? `<span class="badge-tag processed">Processed</span><div style="margin-top:6px;"><button class="btn-view-results" onclick="openResultsModal('${escapeHtml(v.path)}')">👁️ View Results</button></div>` 
+      ? `<span class="badge-tag processed">Processed</span><div style="margin-top:6px;"><button class="btn-view-results" onclick="openResultsModal('${escapeHtml(v.path)}')">📝 Review</button></div>` 
       : `<span class="badge-tag unprocessed">Unprocessed</span>`;
       
     const srtBadge = v.has_srt 
@@ -3846,6 +3846,24 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
+function renderTagsPills(tags) {
+  const container = document.getElementById("results-tags-pills");
+  if (!container) return;
+  container.innerHTML = (tags || []).map(t => `<span class="tag-pill">${escapeHtml(t)}</span>`).join("");
+}
+
+function renderPeoplePills(people) {
+  const container = document.getElementById("results-display-people");
+  if (!container) return;
+  container.innerHTML = (people || []).map(p => `<span class="tag-pill" style="background:#1e3a5f; color:#93c5fd;">👤 ${escapeHtml(p)}</span>`).join("");
+}
+
+function renderAnimalsPills(animals) {
+  const container = document.getElementById("results-display-animals");
+  if (!container) return;
+  container.innerHTML = (animals || []).map(a => `<span class="tag-pill" style="background:#14532d; color:#86efac;">🐕 ${escapeHtml(a)}</span>`).join("");
+}
+
 // --- Results Modal Controller ---
 function initResultsModal() {
   const modal = document.getElementById("modal-results");
@@ -3889,6 +3907,217 @@ function initResultsModal() {
       });
     });
   }
+
+  // Retranscribe audio using Whisper
+  const btnRetranscribe = document.getElementById("btn-review-retranscribe");
+  if (btnRetranscribe) {
+    btnRetranscribe.addEventListener("click", async () => {
+      if (!currentModalVideoPath) return;
+      const taskSelect = document.getElementById("review-whisper-task");
+      const chosenTask = taskSelect ? taskSelect.value : "transcribe";
+      const statusEl = document.getElementById("review-whisper-status");
+      const origText = btnRetranscribe.textContent;
+
+      btnRetranscribe.disabled = true;
+      btnRetranscribe.textContent = "🎙️ Running...";
+      if (statusEl) statusEl.textContent = `Running Whisper (${chosenTask})... this may take a moment.`;
+
+      try {
+        const res = await fetch("/api/review/retranscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file_path: currentModalVideoPath,
+            task: chosenTask
+          })
+        });
+        const resData = await res.json();
+        if (res.ok) {
+          const transcriptBox = document.getElementById("results-display-transcript");
+          if (transcriptBox) transcriptBox.value = resData.audio_transcript || "";
+          if (statusEl) {
+            statusEl.innerHTML = `<span style="color:#4ade80;">✅ ${resData.message}</span> <span style="color:#38bdf8; margin-left:6px;">Tip: Click 'Refine with AI' below to re-input dialogue into title & summary!</span>`;
+          }
+          if (window.pollStatus) {
+            try { window.pollStatus(); } catch (_) {}
+          }
+        } else {
+          alert(`Whisper re-transcription failed: ${resData.detail || res.statusText}`);
+          if (statusEl) statusEl.textContent = `❌ Transcription failed: ${resData.detail || res.statusText}`;
+        }
+      } catch (err) {
+        alert(`Error running Whisper: ${err.message}`);
+        if (statusEl) statusEl.textContent = `❌ Error: ${err.message}`;
+      } finally {
+        btnRetranscribe.disabled = false;
+        btnRetranscribe.textContent = origText;
+      }
+    });
+  }
+
+  // Refine metadata with AI (text-only)
+  const btnRefineAi = document.getElementById("btn-review-refine-ai");
+  if (btnRefineAi) {
+    btnRefineAi.addEventListener("click", async () => {
+      if (!currentModalVideoPath) return;
+      const userGuidance = (document.getElementById("review-user-guidance")?.value || "").trim();
+      const currentTitle = document.getElementById("results-display-title")?.value || "";
+      const currentSummary = document.getElementById("results-display-summary")?.value || "";
+      const currentTags = document.getElementById("results-display-tags")?.value || "";
+      const currentPeople = document.getElementById("results-input-people")?.value || "";
+      const currentAnimals = document.getElementById("results-input-animals")?.value || "";
+      const currentTranscript = document.getElementById("results-display-transcript")?.value || "";
+      const statusEl = document.getElementById("review-refine-status");
+      const origText = btnRefineAi.textContent;
+
+      btnRefineAi.disabled = true;
+      btnRefineAi.textContent = "✨ Refining...";
+      if (statusEl) statusEl.textContent = "AI is refining metadata based on your notes & transcript...";
+
+      try {
+        const res = await fetch("/api/review/refine-ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file_path: currentModalVideoPath,
+            user_guidance: userGuidance,
+            current_title: currentTitle,
+            current_summary: currentSummary,
+            tags: currentTags,
+            people: currentPeople,
+            animals: currentAnimals,
+            objects: currentModalObjects,
+            audio_transcript: currentTranscript
+          })
+        });
+        const resData = await res.json();
+        if (res.ok && resData.analysis) {
+          const a = resData.analysis;
+          if (a.title && document.getElementById("results-display-title")) {
+            document.getElementById("results-display-title").value = a.title;
+          }
+          if (a.summary && document.getElementById("results-display-summary")) {
+            document.getElementById("results-display-summary").value = a.summary;
+          }
+          if (a.tags && document.getElementById("results-display-tags")) {
+            document.getElementById("results-display-tags").value = a.tags.join(", ");
+            renderTagsPills(a.tags);
+          }
+          if (a.people && document.getElementById("results-input-people")) {
+            document.getElementById("results-input-people").value = a.people.join(", ");
+            renderPeoplePills(a.people);
+          }
+          if (a.animals_or_pets && document.getElementById("results-input-animals")) {
+            document.getElementById("results-input-animals").value = a.animals_or_pets.join(", ");
+            renderAnimalsPills(a.animals_or_pets);
+          }
+          if (a.suggested_filename) {
+            const sug = document.getElementById("results-suggested-name");
+            const box = document.getElementById("results-suggested-name-box");
+            if (sug) sug.textContent = a.suggested_filename;
+            if (box) box.classList.remove("hidden");
+          }
+          if (statusEl) {
+            statusEl.innerHTML = `<span style="color:#4ade80;">✅ Refinement applied & sidecars updated!</span>`;
+          }
+          const saveStatus = document.getElementById("review-save-status");
+          if (saveStatus) {
+            saveStatus.innerHTML = `<span style="color:#4ade80;">✅ AI refinement successfully saved across sidecars.</span>`;
+          }
+          if (window.pollStatus) {
+            try { window.pollStatus(); } catch (_) {}
+          }
+        } else {
+          alert(`AI refinement failed: ${resData.detail || res.statusText}`);
+          if (statusEl) statusEl.textContent = `❌ Refinement failed: ${resData.detail || res.statusText}`;
+        }
+      } catch (err) {
+        alert(`Error refining with AI: ${err.message}`);
+        if (statusEl) statusEl.textContent = `❌ Error: ${err.message}`;
+      } finally {
+        btnRefineAi.disabled = false;
+        btnRefineAi.textContent = origText;
+      }
+    });
+  }
+
+  // Save manual changes directly
+  const btnSaveManual = document.getElementById("btn-review-save-manual");
+  if (btnSaveManual) {
+    btnSaveManual.addEventListener("click", async () => {
+      if (!currentModalVideoPath) return;
+      const currentTitle = document.getElementById("results-display-title")?.value || "";
+      const currentSummary = document.getElementById("results-display-summary")?.value || "";
+      const currentTags = document.getElementById("results-display-tags")?.value || "";
+      const currentPeople = document.getElementById("results-input-people")?.value || "";
+      const currentAnimals = document.getElementById("results-input-animals")?.value || "";
+      const currentTranscript = document.getElementById("results-display-transcript")?.value || "";
+      const saveStatus = document.getElementById("review-save-status");
+      const origText = btnSaveManual.textContent;
+
+      btnSaveManual.disabled = true;
+      btnSaveManual.textContent = "💾 Saving...";
+      if (saveStatus) saveStatus.textContent = "Writing sidecars...";
+
+      try {
+        const res = await fetch("/api/review/save-manual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file_path: currentModalVideoPath,
+            title: currentTitle,
+            summary: currentSummary,
+            tags: currentTags,
+            people: currentPeople,
+            animals: currentAnimals,
+            objects: currentModalObjects,
+            audio_transcript: currentTranscript
+          })
+        });
+        const resData = await res.json();
+        if (res.ok) {
+          if (saveStatus) {
+            saveStatus.innerHTML = `<span style="color:#4ade80;">✅ Saved to .info.json, .txt, .xmp, .nfo sidecars!</span>`;
+          }
+          if (window.pollStatus) {
+            try { window.pollStatus(); } catch (_) {}
+          }
+        } else {
+          alert(`Failed to save changes: ${resData.detail || res.statusText}`);
+          if (saveStatus) saveStatus.textContent = `❌ Failed: ${resData.detail || res.statusText}`;
+        }
+      } catch (err) {
+        alert(`Error saving changes: ${err.message}`);
+        if (saveStatus) saveStatus.textContent = `❌ Error: ${err.message}`;
+      } finally {
+        btnSaveManual.disabled = false;
+        btnSaveManual.textContent = origText;
+      }
+    });
+  }
+
+  // Live input sync to tag pills
+  const tagsInput = document.getElementById("results-display-tags");
+  if (tagsInput) {
+    tagsInput.addEventListener("input", () => {
+      const parsed = tagsInput.value.split(",").map(t => t.trim()).filter(Boolean);
+      renderTagsPills(parsed);
+    });
+  }
+  const peopleInput = document.getElementById("results-input-people");
+  if (peopleInput) {
+    peopleInput.addEventListener("input", () => {
+      const parsed = peopleInput.value.split(",").map(p => p.trim()).filter(Boolean);
+      renderPeoplePills(parsed);
+    });
+  }
+  const animalsInput = document.getElementById("results-input-animals");
+  if (animalsInput) {
+    animalsInput.addEventListener("input", () => {
+      const parsed = animalsInput.value.split(",").map(a => a.trim()).filter(Boolean);
+      renderAnimalsPills(parsed);
+    });
+  }
 }
 
 async function openResultsModal(filePath) {
@@ -3914,7 +4143,8 @@ async function openResultsModal(filePath) {
     const data = await res.json();
 
     document.getElementById("results-modal-filename").textContent = data.filename;
-    document.getElementById("results-display-title").textContent = data.title || data.filename;
+    const titleInput = document.getElementById("results-display-title");
+    if (titleInput) titleInput.value = data.title || data.filename;
 
     // Pending Date Confirmation Proposal
     const proposalBanner = document.getElementById("modal-date-proposal-banner");
@@ -4031,7 +4261,8 @@ async function openResultsModal(filePath) {
       btnModalRename.onclick = () => openRenameModal(filePath, data.title || "", null);
     }
 
-    document.getElementById("results-display-summary").textContent = data.summary || "No summary recorded.";
+    const summaryInput = document.getElementById("results-display-summary");
+    if (summaryInput) summaryInput.value = data.summary || "";
 
     // Key moments / events
     const eventsContainer = document.getElementById("results-display-events");
@@ -4049,35 +4280,18 @@ async function openResultsModal(filePath) {
 
     // Tags
     const tagsInput = document.getElementById("results-display-tags");
-    tagsInput.value = data.tags_string || (data.tags ? data.tags.join(", ") : "");
-
-    const tagsPills = document.getElementById("results-tags-pills");
-    tagsPills.innerHTML = "";
-    if (data.tags && data.tags.length > 0) {
-      tagsPills.innerHTML = data.tags.map(t => `<span class="tag-pill">${escapeHtml(t)}</span>`).join("");
-    }
+    if (tagsInput) tagsInput.value = data.tags_string || (data.tags ? data.tags.join(", ") : "");
+    renderTagsPills(data.tags);
 
     // People
-    const peopleGroup = document.getElementById("results-group-people");
-    const peoplePills = document.getElementById("results-display-people");
-    if (data.people && data.people.length > 0) {
-      peopleGroup.classList.remove("hidden");
-      peoplePills.innerHTML = data.people.map(p => `<span class="tag-pill" style="background:#1e3a5f; color:#93c5fd;">👤 ${escapeHtml(p)}</span>`).join("");
-    } else {
-      peopleGroup.classList.add("hidden");
-    }
+    const peopleInput = document.getElementById("results-input-people");
+    if (peopleInput) peopleInput.value = data.people ? data.people.join(", ") : "";
+    renderPeoplePills(data.people);
 
     // Animals & Pets
-    const animalsGroup = document.getElementById("results-group-animals");
-    const animalsPills = document.getElementById("results-display-animals");
-    if (animalsGroup && animalsPills) {
-      if (data.animals_or_pets && data.animals_or_pets.length > 0) {
-        animalsGroup.classList.remove("hidden");
-        animalsPills.innerHTML = data.animals_or_pets.map(a => `<span class="tag-pill" style="background:#14532d; color:#86efac;">🐕 ${escapeHtml(a)}</span>`).join("");
-      } else {
-        animalsGroup.classList.add("hidden");
-      }
-    }
+    const animalsInput = document.getElementById("results-input-animals");
+    if (animalsInput) animalsInput.value = data.animals_or_pets ? data.animals_or_pets.join(", ") : "";
+    renderAnimalsPills(data.animals_or_pets);
 
     // Objects & Equipment (Interactive)
     currentModalVideoPath = filePath;
@@ -4085,37 +4299,40 @@ async function openResultsModal(filePath) {
     renderInteractiveObjects();
 
     // Transcript / Subtitles
-    const transcriptGroup = document.getElementById("results-group-transcript");
-    const transcriptBox = document.getElementById("results-display-transcript");
+    const transcriptInput = document.getElementById("results-display-transcript");
+    if (transcriptInput) transcriptInput.value = data.audio_transcript || "";
     const transcriptLabel = document.getElementById("results-transcript-label");
     const transcriptBadge = document.getElementById("results-transcript-badge");
 
-    if (data.audio_transcript) {
-      transcriptGroup.classList.remove("hidden");
-      transcriptBox.textContent = `"${data.audio_transcript}"`;
-      
-      if (data.subtitles_used || data.subtitle_source === "external_srt") {
-        if (transcriptLabel) transcriptLabel.textContent = "Dialogue Context (From .SRT Subtitles)";
-        if (transcriptBadge) {
-          transcriptBadge.textContent = "💬 .SRT Subtitle";
-          transcriptBadge.className = "badge-tag processed";
-        }
-      } else if (data.subtitle_source === "embedded") {
-        if (transcriptLabel) transcriptLabel.textContent = "Dialogue Context (From Embedded Subtitles)";
-        if (transcriptBadge) {
-          transcriptBadge.textContent = "💬 Embedded Track";
-          transcriptBadge.className = "badge-tag processed";
-        }
-      } else {
-        if (transcriptLabel) transcriptLabel.textContent = "Transcribed Speech / Dialogue";
-        if (transcriptBadge) {
-          transcriptBadge.textContent = "🎙️ Whisper AI";
-          transcriptBadge.className = "badge-tag processed";
-        }
+    if (data.subtitles_used || data.subtitle_source === "external_srt") {
+      if (transcriptLabel) transcriptLabel.textContent = "Dialogue Context (From .SRT Subtitles)";
+      if (transcriptBadge) {
+        transcriptBadge.textContent = "💬 .SRT Subtitle";
+        transcriptBadge.className = "badge-tag processed";
+      }
+    } else if (data.subtitle_source === "embedded") {
+      if (transcriptLabel) transcriptLabel.textContent = "Dialogue Context (From Embedded Subtitles)";
+      if (transcriptBadge) {
+        transcriptBadge.textContent = "💬 Embedded Track";
+        transcriptBadge.className = "badge-tag processed";
       }
     } else {
-      transcriptGroup.classList.add("hidden");
+      if (transcriptLabel) transcriptLabel.textContent = "Speech / Dialogue Transcript";
+      if (transcriptBadge) {
+        transcriptBadge.textContent = "🎙️ Whisper AI";
+        transcriptBadge.className = "badge-tag processed";
+      }
     }
+
+    // Reset Review status banners
+    const userGuidanceInput = document.getElementById("review-user-guidance");
+    if (userGuidanceInput) userGuidanceInput.value = "";
+    const refineStatus = document.getElementById("review-refine-status");
+    if (refineStatus) refineStatus.textContent = "";
+    const saveStatus = document.getElementById("review-save-status");
+    if (saveStatus) saveStatus.textContent = "Edit fields above or refine with AI, then save sidecars.";
+    const whisperStatus = document.getElementById("review-whisper-status");
+    if (whisperStatus) whisperStatus.textContent = "";
 
     // Download buttons
     setupDownloadBtn("btn-download-nfo", data.sidecars?.nfo?.url);
