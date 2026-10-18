@@ -494,6 +494,15 @@ def find_existing_sidecars(p: Path) -> List[str]:
         found.append(".xmp")
     if any(f.exists() for f in [parent / f"{name}.edl", parent / f"{stem}.edl"]):
         found.append(".edl")
+
+    # Check for Sony XML sidecar
+    from src.media.sony_xml import find_sony_xml_sidecar
+    sony_xml = find_sony_xml_sidecar(p)
+    if sony_xml and sony_xml.exists():
+        found.append(".xml")
+    elif any(f.exists() for f in [parent / f"{stem}.xml", parent / f"{stem}.XML", parent / f"{name}.xml"]):
+        found.append(".xml")
+
     return found
 
 @router.post("/queue/check-conflicts")
@@ -2742,6 +2751,10 @@ def get_video_results(file_path: str):
     ]
     srt_p = next((f for f in srt_candidates if f.exists() and f.stat().st_size > 0), None)
 
+    from src.media.sony_xml import find_sony_xml_sidecar, parse_sony_xml
+    sony_xml_p = find_sony_xml_sidecar(p)
+    sony_meta = parse_sony_xml(sony_xml_p) if (sony_xml_p and sony_xml_p.exists()) else None
+
     title = ""
     summary = ""
     events = []
@@ -2817,6 +2830,10 @@ def get_video_results(file_path: str):
         if not creation_time:
             creation_time = task_match.result.get("date_used")
 
+    if not creation_time and sony_meta and sony_meta.get("creation_date"):
+        creation_time = sony_meta["creation_date"]
+        date_source_used = "metadata"
+
     if not creation_time:
         try:
             stat = p.stat()
@@ -2861,6 +2878,11 @@ def get_video_results(file_path: str):
     elif audio_transcript or events or summary:
         srt_download_url = f"/api/download/srt?file_path={urllib.parse.quote(str(p.resolve()))}"
 
+    cam_make = (sony_meta.get("camera_make") if sony_meta else None) or (jdata.get("file", {}).get("metadata", {}).get("camera_make")) or (task_match.result.get("camera_make") if task_match and task_match.result else None)
+    cam_model = (sony_meta.get("camera_model") if sony_meta else None) or (jdata.get("file", {}).get("metadata", {}).get("camera_model")) or (task_match.result.get("camera_model") if task_match and task_match.result else None)
+    fps_val = (sony_meta.get("capture_fps") if sony_meta else None) or (jdata.get("file", {}).get("metadata", {}).get("capture_fps")) or (task_match.result.get("capture_fps") if task_match and task_match.result else None)
+    final_sony_meta = sony_meta or jdata.get("file", {}).get("metadata", {}).get("sony_metadata") or (task_match.result.get("sony_metadata") if task_match and task_match.result else None)
+
     return {
         "status": "ok",
         "task_id": task_match.id if task_match else None,
@@ -2883,6 +2905,11 @@ def get_video_results(file_path: str):
         "pending_date_proposal": pending_date_proposal,
         "detected_date_in_context": detected_date_in_context,
         "detected_date_evidence": detected_date_evidence,
+        "camera_make": cam_make,
+        "camera_model": cam_model,
+        "capture_fps": fps_val,
+        "has_sony_xml": bool(sony_xml_p),
+        "sony_metadata": final_sony_meta,
         "provider": provider,
         "model": model,
         "processed_at": processed_at,
@@ -2917,6 +2944,12 @@ def get_video_results(file_path: str):
                 "path": str(edl_p.resolve()) if edl_p else None,
                 "filename": edl_p.name if edl_p else None,
                 "url": f"/api/download?file_path={urllib.parse.quote(str(edl_p.resolve()))}" if edl_p else None
+            },
+            "xml": {
+                "exists": bool(sony_xml_p),
+                "path": str(sony_xml_p.resolve()) if sony_xml_p else None,
+                "filename": sony_xml_p.name if sony_xml_p else None,
+                "url": f"/api/download?file_path={urllib.parse.quote(str(sony_xml_p.resolve()))}" if sony_xml_p else None
             },
             "srt": {
                 "exists": has_subtitles,

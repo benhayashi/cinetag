@@ -72,6 +72,14 @@ def write_nfo_sidecar(
         if anim.lower() not in [t.lower() for t in all_tags]:
             all_tags.append(anim)
 
+    if video_meta and video_meta.get("camera_model"):
+        mfg = video_meta.get("camera_make") or "Sony"
+        cmod = video_meta["camera_model"]
+        cam_str = f"{mfg} {cmod}" if mfg.lower() not in cmod.lower() else cmod
+        cam_tag = f"Camera: {cam_str}"
+        if cam_tag.lower() not in [t.lower() for t in all_tags]:
+            all_tags.append(cam_tag)
+
     for tag in all_tags:
         t_el = ET.SubElement(movie, "tag")
         t_el.text = tag

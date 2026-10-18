@@ -22,19 +22,44 @@ def probe_video(video_path: Path, custom_ffprobe: Optional[str] = None) -> Dict[
     ffprobe_bin = find_binary("ffprobe", custom_ffprobe)
     
     stat = video_path.stat()
+
+    # Accompanying .srt check
+    from src.media.subtitles import find_accompanying_srt
+    acc_srt = find_accompanying_srt(video_path)
+
+    # Accompanying Sony camera XML check
+    from src.media.sony_xml import find_sony_xml_sidecar, parse_sony_xml
+    sony_xml_path = find_sony_xml_sidecar(video_path)
+    sony_meta = parse_sony_xml(sony_xml_path) if sony_xml_path else None
+
+    # Determine default creation time (prioritizing Sony XML camera timestamp)
+    default_creation_time = datetime.fromtimestamp(stat.st_ctime).isoformat()
+    if sony_meta and sony_meta.get("creation_date"):
+        default_creation_time = sony_meta["creation_date"]
+
     fallback_meta = {
         "path": str(video_path),
         "filename": video_path.name,
         "extension": video_path.suffix.lower(),
         "size_bytes": stat.st_size,
         "modified_time": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-        "creation_time": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        "creation_time": default_creation_time,
         "duration": 0.0,
         "width": 0,
         "height": 0,
         "video_codec": "unknown",
         "audio_codec": None,
         "has_audio": False,
+        "has_subtitles": acc_srt is not None,
+        "has_external_srt": acc_srt is not None,
+        "external_srt_path": str(acc_srt.resolve()) if acc_srt else None,
+        "embedded_subtitles_count": 0,
+        "has_sony_xml": sony_xml_path is not None,
+        "sony_xml_path": str(sony_xml_path.resolve()) if sony_xml_path else None,
+        "sony_metadata": sony_meta,
+        "camera_make": sony_meta.get("camera_make") if sony_meta else None,
+        "camera_model": sony_meta.get("camera_model") if sony_meta else None,
+        "capture_fps": sony_meta.get("capture_fps") if sony_meta else None,
         "ffprobe_available": False,
         "tags": {}
     }
@@ -71,6 +96,11 @@ def probe_video(video_path: Path, custom_ffprobe: Optional[str] = None) -> Dict[
     from src.media.subtitles import find_accompanying_srt
     acc_srt = find_accompanying_srt(video_path)
 
+    # Accompanying Sony camera XML check
+    from src.media.sony_xml import find_sony_xml_sidecar, parse_sony_xml
+    sony_xml_path = find_sony_xml_sidecar(video_path)
+    sony_meta = parse_sony_xml(sony_xml_path) if sony_xml_path else None
+
     duration = float(format_info.get("duration", 0.0))
     if duration == 0.0 and video_stream and "duration" in video_stream:
         try:
@@ -83,13 +113,15 @@ def probe_video(video_path: Path, custom_ffprobe: Optional[str] = None) -> Dict[
     vcodec = video_stream.get("codec_name", "unknown") if video_stream else "none"
     acodec = audio_stream.get("codec_name") if audio_stream else None
 
-    # Determine best date
-    creation_str = tags.get("creation_time") or tags.get("date")
-    if creation_str:
-        # Standardize ISO or similar
-        date_val = creation_str
+    # Determine best date: Sony XML sidecar has exact camera timestamp with timezone
+    if sony_meta and sony_meta.get("creation_date"):
+        date_val = sony_meta["creation_date"]
     else:
-        date_val = datetime.fromtimestamp(stat.st_mtime).isoformat()
+        creation_str = tags.get("creation_time") or tags.get("date")
+        if creation_str:
+            date_val = creation_str
+        else:
+            date_val = datetime.fromtimestamp(stat.st_mtime).isoformat()
 
     return {
         "path": str(video_path),
@@ -106,6 +138,12 @@ def probe_video(video_path: Path, custom_ffprobe: Optional[str] = None) -> Dict[
         "has_external_srt": acc_srt is not None,
         "external_srt_path": str(acc_srt.resolve()) if acc_srt else None,
         "embedded_subtitles_count": len(subtitle_streams),
+        "has_sony_xml": sony_xml_path is not None,
+        "sony_xml_path": str(sony_xml_path.resolve()) if sony_xml_path else None,
+        "sony_metadata": sony_meta,
+        "camera_make": sony_meta.get("camera_make") if sony_meta else None,
+        "camera_model": sony_meta.get("camera_model") if sony_meta else None,
+        "capture_fps": sony_meta.get("capture_fps") if sony_meta else None,
         "creation_time": date_val,
         "modified_time": datetime.fromtimestamp(stat.st_mtime).isoformat(),
         "ffprobe_available": True,

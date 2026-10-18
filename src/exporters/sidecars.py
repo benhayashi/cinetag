@@ -103,6 +103,13 @@ def write_txt_sidecar(
     if video_meta:
         lines.append(f"duration: {video_meta.get('duration', 0):.1f}s")
         lines.append(f"resolution: {video_meta.get('width', 0)}x{video_meta.get('height', 0)}")
+        if video_meta.get("camera_model"):
+            mfg = video_meta.get("camera_make") or "Sony"
+            cmod = video_meta["camera_model"]
+            cam_str = f"{mfg} {cmod}" if mfg.lower() not in cmod.lower() else cmod
+            lines.append(f"camera: {cam_str}")
+        if video_meta.get("capture_fps"):
+            lines.append(f"fps: {video_meta['capture_fps']}")
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))

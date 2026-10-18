@@ -4143,6 +4143,22 @@ async function openResultsModal(filePath) {
     const data = await res.json();
 
     document.getElementById("results-modal-filename").textContent = data.filename;
+
+    const camBadge = document.getElementById("results-modal-camera-badge");
+    if (camBadge) {
+      if (data.camera_model || data.sony_metadata?.camera_model) {
+        const make = data.camera_make || data.sony_metadata?.camera_make || "Sony";
+        const model = data.camera_model || data.sony_metadata?.camera_model;
+        const fps = data.capture_fps || data.sony_metadata?.capture_fps;
+        let label = `📷 ${make} ${model}`;
+        if (fps) label += ` (${fps})`;
+        camBadge.textContent = label;
+        camBadge.classList.remove("hidden");
+      } else {
+        camBadge.classList.add("hidden");
+      }
+    }
+
     const titleInput = document.getElementById("results-display-title");
     if (titleInput) titleInput.value = data.title || data.filename;
 
@@ -4341,6 +4357,7 @@ async function openResultsModal(filePath) {
     setupDownloadBtn("btn-download-json", data.sidecars?.json?.url);
     setupDownloadBtn("btn-download-srt", data.sidecars?.srt?.url);
     setupDownloadBtn("btn-download-edl", data.sidecars?.edl?.url);
+    setupDownloadBtn("btn-download-sony-xml", data.sidecars?.xml?.url);
     setupDownloadBtn("btn-download-video", data.video?.url);
 
     const btnDownloadOptions = document.getElementById("btn-download-video-options");

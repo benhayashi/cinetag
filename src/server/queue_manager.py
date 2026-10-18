@@ -464,6 +464,11 @@ class QueueManager:
                 if date_source_used != "fallback":
                     self.log(f"Determined video date for {video_path.name}: {resolved_iso} (source: {date_source_used})", task_id=task.id)
 
+            if meta.get("has_sony_xml") and meta.get("sony_metadata"):
+                s_cam = meta.get("camera_model") or "Sony camera"
+                s_fn = meta.get("sony_metadata", {}).get("filename") or "XML"
+                self.log(f"📷 Detected Sony camera metadata: {s_cam} ({s_fn})", task_id=task.id)
+
             task.progress = 15
             task.stage = "Checking subtitles & audio"
 
@@ -589,10 +594,16 @@ class QueueManager:
             task.progress = 60
             self.log(f"Sending {len(frames)} frames to {cfg.vision_provider}...", task_id=task.id)
 
-            # Context prompt contains subtitle markers if both exist
-            extra_ctx = None
+            # Context prompt contains subtitle markers and Sony shooting metadata if present
+            extra_ctx_parts = []
             if subtitle_dialogue and transcript and transcript != subtitle_dialogue:
-                extra_ctx = f"Subtitles:\n{subtitle_dialogue}"
+                extra_ctx_parts.append(f"Subtitles:\n{subtitle_dialogue}")
+            if meta.get("sony_metadata"):
+                from src.media.sony_xml import format_sony_context_prompt
+                sony_ctx = format_sony_context_prompt(meta["sony_metadata"])
+                if sony_ctx:
+                    extra_ctx_parts.append(sony_ctx)
+            extra_ctx = "\n\n".join(extra_ctx_parts) if extra_ctx_parts else None
 
             # Combine guidance: task prompt guidance or batch guidance + default guidance
             guidance_notes = []
@@ -759,6 +770,16 @@ class QueueManager:
                     if clean_p and clean_p not in cleaned_people:
                         cleaned_people.append(clean_p)
                 analysis.people_or_subjects = cleaned_people
+
+            # Ground camera hardware in objects/tags if verified via Sony XML
+            if meta.get("camera_model"):
+                cam_mfg = meta.get("camera_make") or "Sony"
+                cam_mod = meta["camera_model"]
+                full_cam = f"{cam_mfg} {cam_mod}" if cam_mfg.lower() not in cam_mod.lower() else cam_mod
+                if analysis.objects is None:
+                    analysis.objects = []
+                if not any(cam_mod.lower() in str(obj).lower() for obj in analysis.objects):
+                    analysis.objects.append(full_cam)
 
             # 4b. Facial Recognition (Hybrid: Built-in local or CompreFace)
             if cfg.face_recognition_enabled:
@@ -1039,6 +1060,11 @@ class QueueManager:
                 "detected_date_evidence": analysis.detected_date_evidence,
                 "date_used": meta.get("creation_time"),
                 "date_source_used": meta.get("date_source_used"),
+                "has_sony_xml": meta.get("has_sony_xml", False),
+                "sony_metadata": meta.get("sony_metadata"),
+                "camera_make": meta.get("camera_make"),
+                "camera_model": meta.get("camera_model"),
+                "capture_fps": meta.get("capture_fps"),
                 "coherent_mode": task.coherent_mode,
                 "series_id": task.series_id,
                 "series_index": task.series_index,

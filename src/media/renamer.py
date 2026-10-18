@@ -597,17 +597,33 @@ def resolve_unique_rename_target(
         old_stem = original_path.stem
         old_name = original_path.name
         seen = set()
+        old_stem_lower = old_stem.lower()
+        old_name_lower = old_name.lower()
+        m_sony_pattern = re.compile(r"^m\d{2,}\.xml$", re.IGNORECASE)
+
         for candidate in parent.iterdir():
             if not candidate.is_file() or candidate.resolve() == orig_resolved or candidate in seen:
                 continue
             if candidate.suffix.lower() in VIDEO_EXTENSIONS:
                 continue
             cand_name = candidate.name
+            cand_name_lower = cand_name.lower()
+
             if cand_name.startswith(old_name):
                 suffix_part = cand_name[len(old_name):]
                 existing_sidecars.append((candidate, "name", suffix_part))
                 seen.add(candidate)
             elif cand_name.startswith(f"{old_stem}."):
+                suffix_part = cand_name[len(old_stem):]
+                existing_sidecars.append((candidate, "stem", suffix_part))
+                seen.add(candidate)
+            elif cand_name_lower.startswith(f"{old_stem_lower}."):
+                # Case-insensitive stem match (e.g. C0001.XML vs c0001.mp4)
+                suffix_part = cand_name[len(old_stem):]
+                existing_sidecars.append((candidate, "stem", suffix_part))
+                seen.add(candidate)
+            elif cand_name_lower.startswith(old_stem_lower) and m_sony_pattern.match(cand_name[len(old_stem):]):
+                # Sony camera sidecars: e.g. C0001M01.XML, C0001M02.xml
                 suffix_part = cand_name[len(old_stem):]
                 existing_sidecars.append((candidate, "stem", suffix_part))
                 seen.add(candidate)
@@ -617,7 +633,10 @@ def resolve_unique_rename_target(
         return desired_path, [(cand, cand) for cand, _, _ in existing_sidecars]
 
     orig_sidecar_resolved = {c[0].resolve() for c in existing_sidecars}
-    standard_suffixes = [".info.json", ".srt", ".txt", f"{ext}.txt", ".nfo", ".xmp", ".edl", ".fcpxml"]
+    standard_suffixes = [
+        ".info.json", ".srt", ".txt", f"{ext}.txt", ".nfo", ".xmp", ".edl", ".fcpxml",
+        ".xml", ".XML", "M01.xml", "M01.XML"
+    ]
 
     def has_conflict(test_stem: str) -> bool:
         test_video = parent / f"{test_stem}{ext}"

@@ -1613,7 +1613,10 @@
     <div class="modal-dialog">
       <div class="modal-header flex-between">
         <div>
-          <h2 id="results-modal-title">📝 Review & Edit Metadata</h2>
+          <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <h2 id="results-modal-title">📝 Review & Edit Metadata</h2>
+            <span id="results-modal-camera-badge" class="badge-tag hidden" style="background: rgba(147, 51, 234, 0.2); border: 1px solid rgba(168, 85, 247, 0.4); color: #c084fc; font-size: 0.75rem;">📷 Sony</span>
+          </div>
           <span id="results-modal-filename" class="text-muted" style="font-size:0.85rem;"></span>
         </div>
         <button id="btn-close-results-modal" class="modal-close-btn" title="Close">&times;</button>
@@ -1776,6 +1779,9 @@
             </a>
             <a id="btn-download-edl" href="#" class="btn btn-secondary hidden" download>
               🎞️ Download .EDL Timeline
+            </a>
+            <a id="btn-download-sony-xml" href="#" class="btn btn-secondary hidden" download>
+              📷 Download Sony .XML Sidecar
             </a>
             <button id="btn-download-video-options" type="button" class="btn btn-primary">
               📥 Download Video (Tags & Subtitles Embedded)...
