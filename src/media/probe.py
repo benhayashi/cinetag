@@ -32,6 +32,21 @@ def probe_video(video_path: Path, custom_ffprobe: Optional[str] = None) -> Dict[
     sony_xml_path = find_sony_xml_sidecar(video_path)
     sony_meta = parse_sony_xml(sony_xml_path) if sony_xml_path else None
 
+    # Check Sony XML GPS
+    from src.media.location import parse_iso6709, reverse_geocode
+    fallback_gps = None
+    fallback_loc = None
+    if sony_meta and sony_meta.get("gps"):
+        try:
+            s_lat = float(sony_meta["gps"]["latitude"])
+            s_lon = float(sony_meta["gps"]["longitude"])
+            fallback_gps = (s_lat, s_lon)
+            fallback_loc = reverse_geocode(s_lat, s_lon, allow_online=False)
+            if fallback_loc:
+                fallback_loc["source"] = "sony_xml"
+        except (ValueError, TypeError):
+            pass
+
     # Determine default creation time (prioritizing Sony XML camera timestamp)
     default_creation_time = datetime.fromtimestamp(stat.st_ctime).isoformat()
     if sony_meta and sony_meta.get("creation_date"):
@@ -60,6 +75,10 @@ def probe_video(video_path: Path, custom_ffprobe: Optional[str] = None) -> Dict[
         "camera_make": sony_meta.get("camera_make") if sony_meta else None,
         "camera_model": sony_meta.get("camera_model") if sony_meta else None,
         "capture_fps": sony_meta.get("capture_fps") if sony_meta else None,
+        "has_gps": fallback_gps is not None,
+        "gps_latitude": fallback_gps[0] if fallback_gps else None,
+        "gps_longitude": fallback_gps[1] if fallback_gps else None,
+        "location": fallback_loc,
         "ffprobe_available": False,
         "tags": {}
     }
@@ -123,6 +142,34 @@ def probe_video(video_path: Path, custom_ffprobe: Optional[str] = None) -> Dict[
         else:
             date_val = datetime.fromtimestamp(stat.st_mtime).isoformat()
 
+    # Check GPS coordinates from Sony XML or QuickTime container atoms
+    gps_coords = None
+    gps_source = None
+    if sony_meta and sony_meta.get("gps"):
+        try:
+            s_lat = float(sony_meta["gps"]["latitude"])
+            s_lon = float(sony_meta["gps"]["longitude"])
+            gps_coords = (s_lat, s_lon)
+            gps_source = "sony_xml"
+        except (ValueError, TypeError):
+            pass
+
+    if not gps_coords and tags:
+        for loc_key in ("location", "location-eng", "com.apple.quicktime.location.ISO6709", "©xyz", "xyz"):
+            val = tags.get(loc_key)
+            if val:
+                parsed = parse_iso6709(str(val))
+                if parsed:
+                    gps_coords = parsed
+                    gps_source = "quicktime_atom"
+                    break
+
+    location_data = None
+    if gps_coords:
+        location_data = reverse_geocode(gps_coords[0], gps_coords[1], allow_online=False)
+        if location_data:
+            location_data["source"] = gps_source
+
     return {
         "path": str(video_path),
         "filename": video_path.name,
@@ -144,6 +191,10 @@ def probe_video(video_path: Path, custom_ffprobe: Optional[str] = None) -> Dict[
         "camera_make": sony_meta.get("camera_make") if sony_meta else None,
         "camera_model": sony_meta.get("camera_model") if sony_meta else None,
         "capture_fps": sony_meta.get("capture_fps") if sony_meta else None,
+        "has_gps": gps_coords is not None,
+        "gps_latitude": gps_coords[0] if gps_coords else None,
+        "gps_longitude": gps_coords[1] if gps_coords else None,
+        "location": location_data,
         "creation_time": date_val,
         "modified_time": datetime.fromtimestamp(stat.st_mtime).isoformat(),
         "ffprobe_available": True,

@@ -1348,6 +1348,30 @@
             <button id="btn-flush-backups" class="btn btn-secondary btn-sm" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);" title="Scan for and delete any leftover .bak backup files across processed folders">🧹 Flush Leftover .bak Files</button>
             <span id="flush-backups-status" style="font-size: 0.85rem; color: var(--text-muted);"></span>
           </div>
+
+          <hr class="divider">
+
+          <h3>📍 Location & Geocoding Standards</h3>
+          <p class="card-desc">Extract, detect, and write location metadata (city, country, GPS coordinates) into video containers and sidecars for map viewing in Apple Photos, Google Photos, Immich, and media servers.</p>
+
+          <div class="checkbox-grid mt-2">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-enable-location-tagging" checked>
+              <b>Enable Location Tagging & Reverse-Geocoding</b>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-allow-online-geocoding" checked>
+              <span>Allow Online Geocoding (OpenStreetMap Nominatim fallback)</span>
+            </label>
+          </div>
+
+          <div class="form-grid mt-2">
+            <div class="form-group">
+              <label for="cfg-default-location-override">Default Location Override (Optional)</label>
+              <input type="text" id="cfg-default-location-override" class="form-control" placeholder="e.g. San Francisco, California or 37.7749, -122.4194">
+              <small class="helper-text">Applied to footage when no camera GPS, Sony XML, or AI visual location is detected.</small>
+            </div>
+          </div>
         </div>
 
         <!-- 5. HARDWARE, ENGINES & SYSTEM CARD -->
@@ -1616,6 +1640,7 @@
           <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
             <h2 id="results-modal-title">📝 Review & Edit Metadata</h2>
             <span id="results-modal-camera-badge" class="badge-tag hidden" style="background: rgba(147, 51, 234, 0.2); border: 1px solid rgba(168, 85, 247, 0.4); color: #c084fc; font-size: 0.75rem;">📷 Sony</span>
+            <span id="results-modal-location-badge" class="badge-tag hidden" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; font-size: 0.75rem;">📍 Location</span>
           </div>
           <span id="results-modal-filename" class="text-muted" style="font-size:0.85rem;"></span>
         </div>
@@ -1713,6 +1738,24 @@
             <input type="text" id="input-new-object-tag" class="form-control form-control-sm" placeholder="e.g. tennis racket, bicycle">
             <button id="btn-add-object-tag" type="button" class="btn btn-secondary btn-sm">+ Add Object</button>
           </div>
+        </div>
+
+        <!-- Detected Location & GPS Coordinates (Interactive) -->
+        <div id="results-group-location" class="results-field-group mt-3" style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 0.85rem 1rem;">
+          <div class="flex-between" style="align-items:center;">
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <label class="results-label" style="color:#10b981; margin-bottom:0;">📍 Location & Map Coordinates</label>
+              <span id="results-location-badge" class="badge-tag hidden" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; font-size: 0.75rem;">GPS</span>
+            </div>
+            <a id="results-location-map-link" href="#" target="_blank" rel="noopener noreferrer" class="hidden" style="font-size:0.8rem; color:#38bdf8; text-decoration:none;">🗺️ View on Map ↗</a>
+          </div>
+          <div style="display:grid; grid-template-columns: 2fr 1fr 1fr auto; gap:0.5rem; margin-top:0.5rem; align-items:center;">
+            <input type="text" id="results-input-location-city" class="form-control form-control-sm" placeholder="City, Region, Country (e.g. Paris, France)">
+            <input type="text" id="results-input-location-lat" class="form-control form-control-sm" placeholder="Latitude (e.g. 48.8566)">
+            <input type="text" id="results-input-location-lon" class="form-control form-control-sm" placeholder="Longitude (e.g. 2.3522)">
+            <button id="btn-results-lookup-location" type="button" class="btn btn-secondary btn-sm" title="Lookup coordinates from city or landmark name">📍 Lookup City</button>
+          </div>
+          <div id="results-location-status" class="text-muted mt-1" style="font-size:0.75rem;"></div>
         </div>
 
         <!-- Audio Transcript / Subtitles -->

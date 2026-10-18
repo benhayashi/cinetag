@@ -39,6 +39,9 @@
   "enable_in_file_tagging": false,
   "backup_before_tagging": true,
   "verify_integrity": true,
+  "enable_location_tagging": true,
+  "default_location_override": null,
+  "allow_online_geocoding": true,
   "host": "0.0.0.0",
   "port": 5555
 }

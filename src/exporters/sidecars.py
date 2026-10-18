@@ -110,6 +110,19 @@ def write_txt_sidecar(
             lines.append(f"camera: {cam_str}")
         if video_meta.get("capture_fps"):
             lines.append(f"fps: {video_meta['capture_fps']}")
+        loc = video_meta.get("location") or result.detected_location
+        if loc:
+            if isinstance(loc, dict):
+                parts = [loc.get(k) for k in ("landmark", "city", "state", "state_or_region", "country") if loc.get(k)]
+                coords = ""
+                if loc.get("latitude") is not None and loc.get("longitude") is not None:
+                    coords = f" ({loc['latitude']}, {loc['longitude']})"
+                if parts:
+                    lines.append(f"location: {', '.join(parts)}{coords}")
+                elif coords:
+                    lines.append(f"location:{coords}")
+            elif isinstance(loc, str) and loc.strip():
+                lines.append(f"location: {loc.strip()}")
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
@@ -125,6 +138,8 @@ def write_info_json_sidecar(
     """Write comprehensive .info.json sidecar for programmatic ingestion."""
     base_path = video_path.parent / f"{video_path.stem}.info.json"
     out_path = resolve_sidecar_path(base_path, conflict_mode)
+
+    loc_obj = (video_meta.get("location") if video_meta else None) or result.detected_location
 
     data = {
         "version": "1.0",
@@ -142,6 +157,8 @@ def write_info_json_sidecar(
             "people_or_subjects": result.people_or_subjects,
             "animals_or_pets": result.animals_or_pets,
             "objects": result.objects,
+            "location": loc_obj,
+            "detected_location": result.detected_location,
             "suggested_filename": result.suggested_filename,
             "detected_date_in_context": result.detected_date_in_context,
             "detected_date_evidence": result.detected_date_evidence,
@@ -193,6 +210,21 @@ def write_xmp_sidecar(
    </Iptc4xmpExt:PersonInImage>
 """
 
+    loc = (video_meta.get("location") if video_meta else None) or result.detected_location
+    location_elements = []
+    if loc and isinstance(loc, dict):
+        if loc.get("city"):
+            location_elements.append(f"   <photoshop:City>{xml_escape(loc['city'])}</photoshop:City>")
+        if loc.get("state") or loc.get("state_or_region"):
+            st = loc.get("state") or loc.get("state_or_region")
+            location_elements.append(f"   <photoshop:State>{xml_escape(st)}</photoshop:State>")
+        if loc.get("country"):
+            location_elements.append(f"   <photoshop:Country>{xml_escape(loc['country'])}</photoshop:Country>")
+        if loc.get("latitude") is not None and loc.get("longitude") is not None:
+            location_elements.append(f"   <exif:GPSLatitude>{loc['latitude']}</exif:GPSLatitude>")
+            location_elements.append(f"   <exif:GPSLongitude>{loc['longitude']}</exif:GPSLongitude>")
+    location_block = ("\n".join(location_elements) + "\n") if location_elements else ""
+
     xmp_content = f"""<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -200,6 +232,7 @@ def write_xmp_sidecar(
     xmlns:dc="http://purl.org/dc/elements/1.1/"
     xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
     xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+    xmlns:exif="http://ns.adobe.com/exif/1.0/"
     xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/">
    <dc:title>
     <rdf:Alt>
@@ -216,7 +249,7 @@ def write_xmp_sidecar(
 {tag_elements}
     </rdf:Bag>
    </dc:subject>
-{person_block}   <photoshop:DateCreated>{date_str}</photoshop:DateCreated>
+{person_block}{location_block}   <photoshop:DateCreated>{date_str}</photoshop:DateCreated>
    <xmp:CreateDate>{date_str}</xmp:CreateDate>
   </rdf:Description>
  </rdf:RDF>

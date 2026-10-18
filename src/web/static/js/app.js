@@ -2277,6 +2277,13 @@ async function loadConfig() {
     const customSystemPromptEl = document.getElementById("cfg-custom-system-prompt");
     if (customSystemPromptEl) customSystemPromptEl.value = cfg.custom_system_prompt || "";
 
+    const enableLocEl = document.getElementById("cfg-enable-location-tagging");
+    if (enableLocEl) enableLocEl.checked = cfg.enable_location_tagging !== false;
+    const onlineLocEl = document.getElementById("cfg-allow-online-geocoding");
+    if (onlineLocEl) onlineLocEl.checked = cfg.allow_online_geocoding !== false;
+    const defLocEl = document.getElementById("cfg-default-location-override");
+    if (defLocEl) defLocEl.value = cfg.default_location_override || "";
+
     const aiTimeoutEl = document.getElementById("cfg-ai-timeout");
     if (aiTimeoutEl) aiTimeoutEl.value = cfg.ai_timeout_seconds || 600;
 
@@ -2746,7 +2753,10 @@ function initSettings() {
       use_filename_context: document.getElementById("cfg-use-filename-context")?.checked ?? true,
       filename_date_order: document.getElementById("cfg-filename-date-order")?.value || "auto",
       detected_date_action: document.getElementById("cfg-detected-date-action")?.value || "ask",
-      sync_file_mtime_with_date: document.getElementById("cfg-sync-file-mtime-with-date")?.checked ?? true
+      sync_file_mtime_with_date: document.getElementById("cfg-sync-file-mtime-with-date")?.checked ?? true,
+      enable_location_tagging: document.getElementById("cfg-enable-location-tagging")?.checked ?? true,
+      allow_online_geocoding: document.getElementById("cfg-allow-online-geocoding")?.checked ?? true,
+      default_location_override: document.getElementById("cfg-default-location-override")?.value.trim() || null
     };
 
     try {
@@ -3970,6 +3980,18 @@ function initResultsModal() {
       const statusEl = document.getElementById("review-refine-status");
       const origText = btnRefineAi.textContent;
 
+      let locPayload = null;
+      const cityVal = document.getElementById("results-input-location-city")?.value.trim();
+      const latVal = document.getElementById("results-input-location-lat")?.value.trim();
+      const lonVal = document.getElementById("results-input-location-lon")?.value.trim();
+      if (cityVal || (latVal && lonVal)) {
+        locPayload = {
+          city: cityVal,
+          latitude: latVal ? parseFloat(latVal) : null,
+          longitude: lonVal ? parseFloat(lonVal) : null
+        };
+      }
+
       btnRefineAi.disabled = true;
       btnRefineAi.textContent = "✨ Refining...";
       if (statusEl) statusEl.textContent = "AI is refining metadata based on your notes & transcript...";
@@ -3987,7 +4009,8 @@ function initResultsModal() {
             people: currentPeople,
             animals: currentAnimals,
             objects: currentModalObjects,
-            audio_transcript: currentTranscript
+            audio_transcript: currentTranscript,
+            location: locPayload
           })
         });
         const resData = await res.json();
@@ -4017,6 +4040,30 @@ function initResultsModal() {
             if (sug) sug.textContent = a.suggested_filename;
             if (box) box.classList.remove("hidden");
           }
+          if (a.location) {
+            const l = a.location;
+            let cName = l.city || "";
+            if (l.state && l.state !== l.city) cName += (cName ? ", " : "") + l.state;
+            if (l.country) cName += (cName ? ", " : "") + l.country;
+            const cityInput = document.getElementById("results-input-location-city");
+            const latInput = document.getElementById("results-input-location-lat");
+            const lonInput = document.getElementById("results-input-location-lon");
+            const mapLink = document.getElementById("results-location-map-link");
+            const modalLocBadge = document.getElementById("results-modal-location-badge");
+            const locBadge = document.getElementById("results-location-badge");
+            if (cityInput && cName) cityInput.value = cName;
+            if (latInput && l.latitude != null) latInput.value = l.latitude;
+            if (lonInput && l.longitude != null) lonInput.value = l.longitude;
+            if (locBadge) locBadge.classList.remove("hidden");
+            if (modalLocBadge) {
+              modalLocBadge.classList.remove("hidden");
+              modalLocBadge.textContent = `📍 ${l.city || 'Location'}`;
+            }
+            if (mapLink && l.latitude != null && l.longitude != null) {
+              mapLink.href = `https://www.openstreetmap.org/?mlat=${l.latitude}&mlon=${l.longitude}#map=13/${l.latitude}/${l.longitude}`;
+              mapLink.classList.remove("hidden");
+            }
+          }
           if (statusEl) {
             statusEl.innerHTML = `<span style="color:#4ade80;">✅ Refinement applied & sidecars updated!</span>`;
           }
@@ -4041,6 +4088,63 @@ function initResultsModal() {
     });
   }
 
+  // Lookup location button handler
+  const btnLookupLoc = document.getElementById("btn-results-lookup-location");
+  if (btnLookupLoc) {
+    btnLookupLoc.onclick = async () => {
+      const cityInput = document.getElementById("results-input-location-city");
+      const latInput = document.getElementById("results-input-location-lat");
+      const lonInput = document.getElementById("results-input-location-lon");
+      const locStatus = document.getElementById("results-location-status");
+      const locBadge = document.getElementById("results-location-badge");
+      const modalLocBadge = document.getElementById("results-modal-location-badge");
+      const mapLink = document.getElementById("results-location-map-link");
+
+      const q = cityInput?.value.trim();
+      if (!q) {
+        if (locStatus) locStatus.textContent = "Please enter a city or landmark name to search.";
+        return;
+      }
+      btnLookupLoc.disabled = true;
+      btnLookupLoc.textContent = "Searching...";
+      if (locStatus) locStatus.textContent = "Looking up coordinates...";
+      try {
+        const res = await fetch("/api/location/lookup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: q })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === "ok" && data.location) {
+          const l = data.location;
+          let cName = l.city || "";
+          if (l.state && l.state !== l.city) cName += (cName ? ", " : "") + l.state;
+          if (l.country) cName += (cName ? ", " : "") + l.country;
+          if (cityInput) cityInput.value = cName;
+          if (latInput) latInput.value = l.latitude;
+          if (lonInput) lonInput.value = l.longitude;
+          if (locBadge) locBadge.classList.remove("hidden");
+          if (modalLocBadge) {
+            modalLocBadge.classList.remove("hidden");
+            modalLocBadge.textContent = `📍 ${l.city || 'Location'}`;
+          }
+          if (locStatus) locStatus.innerHTML = `<span style="color:#4ade80;">Found: ${escapeHtml(cName)} (${l.latitude}, ${l.longitude})</span>`;
+          if (mapLink && l.latitude != null && l.longitude != null) {
+            mapLink.href = `https://www.openstreetmap.org/?mlat=${l.latitude}&mlon=${l.longitude}#map=13/${l.latitude}/${l.longitude}`;
+            mapLink.classList.remove("hidden");
+          }
+        } else {
+          if (locStatus) locStatus.innerHTML = `<span style="color:#f87171;">Location not found. You can enter lat/lon manually.</span>`;
+        }
+      } catch (e) {
+        if (locStatus) locStatus.innerHTML = `<span style="color:#f87171;">Lookup failed: ${escapeHtml(e.message)}</span>`;
+      } finally {
+        btnLookupLoc.disabled = false;
+        btnLookupLoc.textContent = "📍 Lookup City";
+      }
+    };
+  }
+
   // Save manual changes directly
   const btnSaveManual = document.getElementById("btn-review-save-manual");
   if (btnSaveManual) {
@@ -4054,6 +4158,18 @@ function initResultsModal() {
       const currentTranscript = document.getElementById("results-display-transcript")?.value || "";
       const saveStatus = document.getElementById("review-save-status");
       const origText = btnSaveManual.textContent;
+
+      let locPayload = null;
+      const cityVal = document.getElementById("results-input-location-city")?.value.trim();
+      const latVal = document.getElementById("results-input-location-lat")?.value.trim();
+      const lonVal = document.getElementById("results-input-location-lon")?.value.trim();
+      if (cityVal || (latVal && lonVal)) {
+        locPayload = {
+          city: cityVal,
+          latitude: latVal ? parseFloat(latVal) : null,
+          longitude: lonVal ? parseFloat(lonVal) : null
+        };
+      }
 
       btnSaveManual.disabled = true;
       btnSaveManual.textContent = "💾 Saving...";
@@ -4071,7 +4187,8 @@ function initResultsModal() {
             people: currentPeople,
             animals: currentAnimals,
             objects: currentModalObjects,
-            audio_transcript: currentTranscript
+            audio_transcript: currentTranscript,
+            location: locPayload
           })
         });
         const resData = await res.json();
@@ -4313,6 +4430,46 @@ async function openResultsModal(filePath) {
     currentModalVideoPath = filePath;
     currentModalObjects = (data.objects || []).slice();
     renderInteractiveObjects();
+
+    // Location & Coordinates
+    const cityInput = document.getElementById("results-input-location-city");
+    const latInput = document.getElementById("results-input-location-lat");
+    const lonInput = document.getElementById("results-input-location-lon");
+    const locStatus = document.getElementById("results-location-status");
+    const locBadge = document.getElementById("results-location-badge");
+    const modalLocBadge = document.getElementById("results-modal-location-badge");
+    const mapLink = document.getElementById("results-location-map-link");
+
+    if (locStatus) locStatus.textContent = "";
+
+    const loc = data.location || null;
+    if (loc) {
+      let cityName = loc.city || "";
+      if (loc.state && loc.state !== loc.city) cityName += (cityName ? ", " : "") + loc.state;
+      if (loc.country) cityName += (cityName ? ", " : "") + loc.country;
+      if (cityInput) cityInput.value = cityName;
+      if (latInput) latInput.value = (loc.latitude != null) ? loc.latitude : "";
+      if (lonInput) lonInput.value = (loc.longitude != null) ? loc.longitude : "";
+
+      if (locBadge) locBadge.classList.remove("hidden");
+      if (modalLocBadge) {
+        modalLocBadge.classList.remove("hidden");
+        modalLocBadge.textContent = `📍 ${loc.city || 'Location'}`;
+      }
+      if (mapLink && loc.latitude != null && loc.longitude != null) {
+        mapLink.href = `https://www.openstreetmap.org/?mlat=${loc.latitude}&mlon=${loc.longitude}#map=13/${loc.latitude}/${loc.longitude}`;
+        mapLink.classList.remove("hidden");
+      } else if (mapLink) {
+        mapLink.classList.add("hidden");
+      }
+    } else {
+      if (cityInput) cityInput.value = "";
+      if (latInput) latInput.value = "";
+      if (lonInput) lonInput.value = "";
+      if (locBadge) locBadge.classList.add("hidden");
+      if (modalLocBadge) modalLocBadge.classList.add("hidden");
+      if (mapLink) mapLink.classList.add("hidden");
+    }
 
     // Transcript / Subtitles
     const transcriptInput = document.getElementById("results-display-transcript");

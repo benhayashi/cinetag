@@ -119,6 +119,11 @@ class AppConfig(BaseModel):
     flush_backup_on_success: bool = Field(default=True, description="Automatically flush/delete the .bak file after successful in-file tagging and stream integrity verification.")
     verify_integrity: bool = True
 
+    # Location & Map Geocoding
+    enable_location_tagging: bool = Field(default=True, description="Detect, geocode, and write location metadata to sidecars and video containers")
+    default_location_override: Optional[str] = Field(default=None, description="Default fallback location/city (e.g. 'San Francisco, CA' or 'New York')")
+    allow_online_geocoding: bool = Field(default=True, description="Allow OpenStreetMap Nominatim lookup fallback when place is not in offline database")
+
     # Web Server & Access Control
     host: str = Field(default="127.0.0.1", description="Bind address. 127.0.0.1 = this computer only; 0.0.0.0 = whole LAN (an access token is then required).")
     port: int = 5555

@@ -80,6 +80,20 @@ def write_nfo_sidecar(
         if cam_tag.lower() not in [t.lower() for t in all_tags]:
             all_tags.append(cam_tag)
 
+    loc = (video_meta.get("location") if video_meta else None) or result.detected_location
+    if loc and isinstance(loc, dict):
+        if loc.get("country"):
+            country_el = ET.SubElement(movie, "country")
+            country_el.text = str(loc["country"])
+        if loc.get("city"):
+            city_el = ET.SubElement(movie, "city")
+            city_el.text = str(loc["city"])
+        parts = [loc.get(k) for k in ("landmark", "city", "state", "state_or_region", "country") if loc.get(k)]
+        if parts:
+            loc_tag = f"Location: {', '.join(parts)}"
+            if loc_tag.lower() not in [t.lower() for t in all_tags]:
+                all_tags.append(loc_tag)
+
     for tag in all_tags:
         t_el = ET.SubElement(movie, "tag")
         t_el.text = tag

@@ -158,6 +158,13 @@ def parse_sony_xml(xml_path: Path) -> Dict[str, Any]:
             elif local_tag == "ExifGPS":
                 lat = elem.get("latitude")
                 lon = elem.get("longitude")
+                if not (lat and lon):
+                    for ch in elem:
+                        ch_tag = ch.tag.split("}")[-1] if "}" in ch.tag else ch.tag
+                        if ch_tag in ("Latitude", "Lat"):
+                            lat = ch.get("value") or (ch.text and ch.text.strip())
+                        elif ch_tag in ("Longitude", "Lon"):
+                            lon = ch.get("value") or (ch.text and ch.text.strip())
                 if lat and lon:
                     result["gps"] = {"latitude": lat, "longitude": lon}
 

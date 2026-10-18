@@ -23,7 +23,13 @@ You must respond in valid JSON with the following structure:
   "objects": ["tennis racket", "tennis ball", "sports visor", "lawn chair"],
   "suggested_filename": "kids_playing_tennis_backyard",
   "detected_date_in_context": "YYYY-MM-DD, YYYY-MM, or YYYY if a calendar, on-screen timestamp, newspaper, banner, or spoken date is present; otherwise null",
-  "detected_date_evidence": "Short explanation of the date evidence (e.g. Wall calendar shows October 2014, or Camcorder overlay in corner shows 05/12/1998); otherwise null"
+  "detected_date_evidence": "Short explanation of the date evidence (e.g. Wall calendar shows October 2014, or Camcorder overlay in corner shows 05/12/1998); otherwise null",
+  "detected_location": {
+    "city": "City or municipality if identifiable (e.g. San Francisco, Paris, Honolulu); otherwise null",
+    "state_or_region": "State, province, or region if identifiable; otherwise null",
+    "country": "Country if identifiable; otherwise null",
+    "landmark": "Specific landmark, park, attraction, or beach if identifiable (e.g. Golden Gate Bridge, Central Park); otherwise null"
+  }
 }
 
 Important Rules:
@@ -38,6 +44,7 @@ Important Rules:
 9. Output ONLY the raw JSON object, without introductory text or markdown formatting if possible.
 10. Filename Clues & Historical Metadata: When original filename context clues (such as people's names, event titles, locations, or dates) are provided, verify them against visual and audible cues. If consistent with the footage, incorporate them into "people_or_subjects", the "title", the "summary", "tags", and "suggested_filename".
 11. Date & Time Clues in Video Context: Look closely for any visible or audible date/time information in the footage (e.g. wall or desk calendar with visible month/year/day, camcorder timestamp overlay in corner, newspaper date, event banners like 'Class of 2012' or '50th Anniversary 1998', birthday cakes, holiday decorations, or spoken dates in speech). If detected, report 'detected_date_in_context' (format as YYYY-MM-DD, YYYY-MM, or YYYY) and 'detected_date_evidence' (e.g. 'Wall calendar shows October 2014'). If no date information is detected in context, set both to null.
+12. Geographic Location Clues: When recognizable landmarks, famous buildings, skylines, street name signs, transit banners, or spoken geographic mentions are present, specify them in 'detected_location'. If the location is generic indoor or unidentifiable, set 'detected_location': null.
 """
 DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
 
@@ -65,7 +72,13 @@ You must respond in valid JSON with the following structure:
   "people_or_subjects": ["Identified people"],
   "animals_or_pets": ["Identified animals or pets"],
   "objects": ["Physical objects or gear"],
-  "suggested_filename": "concise_slug_incorporating_updates"
+  "suggested_filename": "concise_slug_incorporating_updates",
+  "detected_location": {
+    "city": "City name if specified in user guidance or footage, else null",
+    "state_or_region": "State or region, else null",
+    "country": "Country, else null",
+    "landmark": "Landmark or venue if known, else null"
+  }
 }
 
 Important Rules:
@@ -83,6 +96,7 @@ def build_refinement_prompt(
     current_people: Optional[List[str]] = None,
     current_animals: Optional[List[str]] = None,
     current_objects: Optional[List[str]] = None,
+    current_location: Optional[Any] = None,
     user_guidance: Optional[str] = None,
     audio_transcript: Optional[str] = None,
     events: Optional[List[Any]] = None
@@ -99,6 +113,15 @@ def build_refinement_prompt(
         parts.append(f"Animals/Pets: {', '.join(current_animals)}")
     if current_objects:
         parts.append(f"Objects/Gear: {', '.join(current_objects)}")
+    if current_location:
+        loc_str = ""
+        if isinstance(current_location, dict):
+            loc_parts = [current_location.get(k) for k in ("landmark", "city", "state_or_region", "state", "country") if current_location.get(k)]
+            loc_str = ", ".join(loc_parts)
+        elif isinstance(current_location, str):
+            loc_str = current_location
+        if loc_str:
+            parts.append(f"Location: {loc_str}")
 
     if audio_transcript and audio_transcript.strip():
         parts.append("\n--- AUDIO TRANSCRIPT / DIALOGUE ---")
@@ -223,6 +246,15 @@ def parse_ai_response(raw_text: str, default_title: str = "Home Video") -> Video
             raw_slug = re.sub(r'[\s:;,-]+$', '', raw_slug).strip()
         clean_slug = raw_slug.replace(" ", "_")
 
+        detected_loc = data.get("detected_location") or data.get("location")
+        parsed_loc = None
+        if isinstance(detected_loc, dict):
+            clean_loc = {k: str(v).strip() for k, v in detected_loc.items() if v and str(v).strip() and str(v).lower() != "null"}
+            if clean_loc:
+                parsed_loc = clean_loc
+        elif isinstance(detected_loc, str) and detected_loc.strip() and detected_loc.strip().lower() != "null":
+            parsed_loc = {"city": detected_loc.strip()}
+
         return VideoAnalysisResult(
             title=clean_title,
             summary=data.get("summary", clean_text[:300]),
@@ -234,6 +266,7 @@ def parse_ai_response(raw_text: str, default_title: str = "Home Video") -> Video
             suggested_filename=clean_slug,
             detected_date_in_context=str(detected_date_in_ctx).strip() if detected_date_in_ctx else None,
             detected_date_evidence=str(detected_date_evid).strip() if detected_date_evid else None,
+            detected_location=parsed_loc,
             raw_response=raw_text
         )
     except Exception:

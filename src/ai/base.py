@@ -23,6 +23,7 @@ class VideoAnalysisResult(BaseModel):
     suggested_filename: str = Field(default="", description="Safe slugified filename recommendation")
     detected_date_in_context: Optional[str] = Field(default=None, description="Date detected visually or audibly in the video context (e.g. wall calendar, camcorder stamp, newspaper, banner, or spoken date)")
     detected_date_evidence: Optional[str] = Field(default=None, description="Visual or audible evidence for the detected date")
+    detected_location: Optional[Dict[str, Any]] = Field(default=None, description="Location detected in video context (city, state, country, landmark)")
     audio_transcript: Optional[str] = None
     provider_name: str = ""
     model_name: str = ""

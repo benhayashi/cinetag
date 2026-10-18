@@ -40,6 +40,7 @@ from src.ai.whisper_service import WhisperTranscriptionService
 from src.ai.base import VideoAnalysisResult, TimestampEvent
 from src.ai.prompt import build_refinement_prompt, REFINEMENT_SYSTEM_PROMPT
 from src.media.sampler import extract_audio
+from src.media.location import resolve_location, reverse_geocode, format_iso6709, parse_iso6709
 from src.server.queue_manager import manager
 
 
@@ -2353,6 +2354,11 @@ def sync_metadata_sidecars(video_path: Path, result: VideoAnalysisResult, cfg: A
         except Exception:
             pass
 
+    if result.detected_location:
+        video_meta["location"] = result.detected_location
+        if "detected_location" not in video_meta:
+            video_meta["detected_location"] = result.detected_location
+
     # 1. Update info.json
     write_info_json_sidecar(video_path, result, video_meta=video_meta, conflict_mode="overwrite")
 
@@ -2396,6 +2402,9 @@ def sync_metadata_sidecars(video_path: Path, result: VideoAnalysisResult, cfg: A
         task_match.result["people"] = result.people_or_subjects
         task_match.result["animals_or_pets"] = result.animals_or_pets
         task_match.result["objects"] = result.objects
+        if result.detected_location:
+            task_match.result["location"] = result.detected_location
+            task_match.result["detected_location"] = result.detected_location
         if result.audio_transcript:
             task_match.result["audio_transcript"] = result.audio_transcript
 
@@ -2508,6 +2517,29 @@ def review_retranscribe(req: RetranscribeRequest):
         "message": f"Successfully transcribed {len(new_transcript)} characters."
     }
 
+class LocationLookupRequest(BaseModel):
+    query: str
+
+@router.post("/location/lookup")
+def location_lookup(req: LocationLookupRequest):
+    """
+    Geocode a city, region, or landmark query to geographic coordinates (lat/lon).
+    Uses fast embedded offline dictionary first, with optional Nominatim fallback.
+    """
+    cfg = load_config()
+    allow_online = getattr(cfg, "allow_online_geocoding", True)
+    resolved = resolve_location(req.query, allow_online=allow_online)
+    if not resolved:
+        return {
+            "status": "not_found",
+            "message": f"Could not find coordinates for '{req.query}'",
+            "location": None
+        }
+    return {
+        "status": "ok",
+        "location": resolved
+    }
+
 class SaveManualReviewRequest(BaseModel):
     file_path: str
     title: Optional[str] = None
@@ -2517,11 +2549,12 @@ class SaveManualReviewRequest(BaseModel):
     animals: Optional[Union[List[str], str]] = None
     objects: Optional[Union[List[str], str]] = None
     audio_transcript: Optional[str] = None
+    location: Optional[Union[Dict[str, Any], str]] = None
 
 @router.post("/review/save-manual")
 def review_save_manual(req: SaveManualReviewRequest):
     """
-    Directly update metadata (title, summary, tags, people, animals, objects, transcript)
+    Directly update metadata (title, summary, tags, people, animals, objects, transcript, location)
     and sync changes across .info.json, .txt, .xmp, .nfo, and .srt sidecars.
     """
     video_path = resolve_video_path(req.file_path)
@@ -2539,17 +2572,20 @@ def review_save_manual(req: SaveManualReviewRequest):
     existing_detected_date_evidence = None
     existing_provider = ""
     existing_model = ""
+    existing_location = None
 
     if json_p:
         try:
             with open(json_p, "r", encoding="utf-8") as jf:
-                prev_data = json.load(jf).get("analysis", {})
+                prev_json = json.load(jf)
+                prev_data = prev_json.get("analysis", {})
                 existing_events = [TimestampEvent(**ev) for ev in prev_data.get("events", []) if isinstance(ev, dict)]
                 existing_suggested_filename = prev_data.get("suggested_filename", "")
                 existing_detected_date = prev_data.get("detected_date_in_context")
                 existing_detected_date_evidence = prev_data.get("detected_date_evidence")
                 existing_provider = prev_data.get("provider", "")
                 existing_model = prev_data.get("model", "")
+                existing_location = prev_data.get("detected_location") or prev_json.get("file", {}).get("metadata", {}).get("location")
         except Exception:
             pass
 
@@ -2560,6 +2596,31 @@ def review_save_manual(req: SaveManualReviewRequest):
     clean_animals = parse_str_or_list(req.animals)
     clean_objects = parse_str_or_list(req.objects)
     clean_transcript = (req.audio_transcript or "").strip() if req.audio_transcript is not None else None
+
+    # Handle location
+    clean_location = None
+    allow_online = getattr(cfg, "allow_online_geocoding", True)
+    if req.location:
+        if isinstance(req.location, dict):
+            c_city = str(req.location.get("city") or "").strip()
+            c_lat = req.location.get("latitude")
+            c_lon = req.location.get("longitude")
+            if c_lat is not None and c_lon is not None:
+                try:
+                    c_lat = float(c_lat)
+                    c_lon = float(c_lon)
+                    rev = reverse_geocode(c_lat, c_lon, allow_online=allow_online)
+                    clean_location = rev if rev else {"city": c_city or "Unknown", "latitude": c_lat, "longitude": c_lon}
+                    if c_city:
+                        clean_location["city"] = c_city
+                except (ValueError, TypeError):
+                    clean_location = resolve_location(c_city, allow_online=allow_online) or {"city": c_city}
+            elif c_city:
+                clean_location = resolve_location(c_city, allow_online=allow_online) or {"city": c_city}
+        elif isinstance(req.location, str) and req.location.strip():
+            clean_location = resolve_location(req.location.strip(), allow_online=allow_online) or {"city": req.location.strip()}
+    elif existing_location:
+        clean_location = existing_location
 
     result = VideoAnalysisResult(
         title=clean_title,
@@ -2574,7 +2635,8 @@ def review_save_manual(req: SaveManualReviewRequest):
         detected_date_evidence=existing_detected_date_evidence,
         audio_transcript=clean_transcript,
         provider_name=existing_provider,
-        model_name=existing_model
+        model_name=existing_model,
+        detected_location=clean_location
     )
 
     sync_metadata_sidecars(video_path, result, cfg)
@@ -2589,7 +2651,8 @@ def review_save_manual(req: SaveManualReviewRequest):
             "people": result.people_or_subjects,
             "animals_or_pets": result.animals_or_pets,
             "objects": result.objects,
-            "audio_transcript": result.audio_transcript
+            "audio_transcript": result.audio_transcript,
+            "location": result.detected_location
         }
     }
 
@@ -2603,6 +2666,7 @@ class RefineAiRequest(BaseModel):
     animals: Optional[Union[List[str], str]] = None
     objects: Optional[Union[List[str], str]] = None
     audio_transcript: Optional[str] = None
+    location: Optional[Union[Dict[str, Any], str]] = None
 
 @router.post("/review/refine-ai")
 def review_refine_ai(req: RefineAiRequest):
@@ -2622,14 +2686,17 @@ def review_refine_ai(req: RefineAiRequest):
     existing_events = []
     existing_detected_date = None
     existing_detected_date_evidence = None
+    existing_location = None
 
     if json_p:
         try:
             with open(json_p, "r", encoding="utf-8") as jf:
-                prev_data = json.load(jf).get("analysis", {})
+                prev_json = json.load(jf)
+                prev_data = prev_json.get("analysis", {})
                 existing_events = [TimestampEvent(**ev) for ev in prev_data.get("events", []) if isinstance(ev, dict)]
                 existing_detected_date = prev_data.get("detected_date_in_context")
                 existing_detected_date_evidence = prev_data.get("detected_date_evidence")
+                existing_location = prev_data.get("detected_location") or prev_json.get("file", {}).get("metadata", {}).get("location")
         except Exception:
             pass
 
@@ -2638,6 +2705,9 @@ def review_refine_ai(req: RefineAiRequest):
     clean_animals = parse_str_or_list(req.animals)
     clean_objects = parse_str_or_list(req.objects)
 
+    # Clean location if passed
+    loc_for_prompt = req.location or existing_location
+
     refinement_prompt = build_refinement_prompt(
         current_title=req.current_title or video_path.stem,
         current_summary=req.current_summary or "",
@@ -2645,6 +2715,7 @@ def review_refine_ai(req: RefineAiRequest):
         current_people=clean_people,
         current_animals=clean_animals,
         current_objects=clean_objects,
+        current_location=loc_for_prompt,
         user_guidance=req.user_guidance,
         audio_transcript=req.audio_transcript,
         events=existing_events
@@ -2665,7 +2736,7 @@ def review_refine_ai(req: RefineAiRequest):
         logger.error(f"AI refinement failed: {e}")
         raise HTTPException(status_code=500, detail=f"AI refinement failed: {e}")
 
-    # Preserve events and dates if not re-emitted
+    # Preserve events, dates, and location if not re-emitted
     if not refined_result.events and existing_events:
         refined_result.events = existing_events
     if not refined_result.detected_date_in_context and existing_detected_date:
@@ -2673,6 +2744,8 @@ def review_refine_ai(req: RefineAiRequest):
         refined_result.detected_date_evidence = existing_detected_date_evidence
     if req.audio_transcript and not refined_result.audio_transcript:
         refined_result.audio_transcript = req.audio_transcript
+    if not refined_result.detected_location and existing_location:
+        refined_result.detected_location = existing_location
 
     sync_metadata_sidecars(video_path, refined_result, cfg)
 
@@ -2687,7 +2760,8 @@ def review_refine_ai(req: RefineAiRequest):
             "animals_or_pets": refined_result.animals_or_pets,
             "objects": refined_result.objects,
             "suggested_filename": refined_result.suggested_filename,
-            "audio_transcript": refined_result.audio_transcript
+            "audio_transcript": refined_result.audio_transcript,
+            "location": refined_result.detected_location
         }
     }
 
@@ -2883,6 +2957,15 @@ def get_video_results(file_path: str):
     fps_val = (sony_meta.get("capture_fps") if sony_meta else None) or (jdata.get("file", {}).get("metadata", {}).get("capture_fps")) or (task_match.result.get("capture_fps") if task_match and task_match.result else None)
     final_sony_meta = sony_meta or jdata.get("file", {}).get("metadata", {}).get("sony_metadata") or (task_match.result.get("sony_metadata") if task_match and task_match.result else None)
 
+    location_data = (
+        jdata.get("file", {}).get("metadata", {}).get("location")
+        or jdata.get("metadata", {}).get("location")
+        or jdata.get("analysis", {}).get("detected_location")
+        or (task_match.result.get("location") if task_match and task_match.result else None)
+        or (task_match.result.get("detected_location") if task_match and task_match.result else None)
+        or (sony_meta.get("location") if sony_meta else None)
+    )
+
     return {
         "status": "ok",
         "task_id": task_match.id if task_match else None,
@@ -2896,6 +2979,7 @@ def get_video_results(file_path: str):
         "people": people,
         "animals_or_pets": animals_or_pets,
         "objects": objects,
+        "location": location_data,
         "audio_transcript": audio_transcript,
         "suggested_filename": formatted_suggested_name,
         "ai_slug": suggested_filename or stem,

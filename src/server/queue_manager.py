@@ -832,6 +832,67 @@ class QueueManager:
                 except Exception as fe:
                     self.log(f"Facial recognition note: {fe}", level="warning", task_id=task.id)
 
+            # 4c. Location Detection & Geocoding
+            final_location = None
+            if getattr(cfg, "enable_location_tagging", True):
+                from src.media.location import resolve_location, reverse_geocode, format_iso6709
+
+                # Priority 1: Hardware GPS from probe (Sony XML or container QuickTime atom)
+                if meta.get("has_gps") and meta.get("gps_latitude") is not None and meta.get("gps_longitude") is not None:
+                    lat_val = meta["gps_latitude"]
+                    lon_val = meta["gps_longitude"]
+                    final_location = meta.get("location") or reverse_geocode(lat_val, lon_val, allow_online=getattr(cfg, "allow_online_geocoding", True))
+                    if not final_location:
+                        final_location = {
+                            "city": None, "state": None, "country": None, "landmark": None,
+                            "latitude": lat_val, "longitude": lon_val, "iso6709": format_iso6709(lat_val, lon_val),
+                            "source": "hardware_gps"
+                        }
+                    else:
+                        final_location["source"] = "hardware_gps"
+
+                # Priority 2: AI-detected location in video
+                if not final_location and analysis.detected_location:
+                    ai_loc = analysis.detected_location
+                    query_parts = [ai_loc.get(k) for k in ("landmark", "city", "state_or_region", "state", "country") if ai_loc.get(k)]
+                    query_str = ", ".join(query_parts)
+                    resolved = resolve_location(query_str, allow_online=getattr(cfg, "allow_online_geocoding", True))
+                    if resolved:
+                        final_location = resolved
+                        final_location["source"] = "ai_detected"
+                    else:
+                        final_location = {
+                            "city": ai_loc.get("city"),
+                            "state": ai_loc.get("state_or_region") or ai_loc.get("state"),
+                            "country": ai_loc.get("country"),
+                            "landmark": ai_loc.get("landmark"),
+                            "latitude": None,
+                            "longitude": None,
+                            "iso6709": None,
+                            "source": "ai_detected_unresolved"
+                        }
+
+                # Priority 3: Default location override from Settings if configured
+                if not final_location and getattr(cfg, "default_location_override", None):
+                    def_query = cfg.default_location_override.strip()
+                    resolved = resolve_location(def_query, allow_online=getattr(cfg, "allow_online_geocoding", True))
+                    if resolved:
+                        final_location = resolved
+                        final_location["source"] = "settings_default"
+
+                if final_location:
+                    meta["location"] = final_location
+                    loc_name_parts = [final_location.get(k) for k in ("landmark", "city", "state", "country") if final_location.get(k)]
+                    if loc_name_parts:
+                        loc_display = ", ".join(loc_name_parts)
+                        self.log(f"📍 Location determined for {video_path.name}: {loc_display}", task_id=task.id)
+                        # Ground into tags if not already present
+                        loc_tag = f"Location: {loc_display}"
+                        if loc_tag.lower() not in [t.lower() for t in analysis.tags]:
+                            analysis.tags.append(loc_tag)
+                        if final_location.get("city") and final_location["city"].lower() not in [t.lower() for t in analysis.tags]:
+                            analysis.tags.append(final_location["city"])
+
             # Evaluate detected date from video context (visual cues: calendar, clock, newspaper, banner, or audio transcript)
             if getattr(analysis, "detected_date_in_context", None):
                 detected_date_action = getattr(task, "detected_date_action", None) or getattr(cfg, "detected_date_action", "ask")
@@ -964,11 +1025,18 @@ class QueueManager:
                 self.log(f"Writing container tags to {video_path.name} with integrity check...", task_id=task.id)
                 people_tags = [f"Person: {p}" for p in analysis.people_or_subjects]
                 all_keywords = analysis.tags + people_tags
+                loc = meta.get("location")
                 tags = {
                     "title": analysis.title,
                     "description": analysis.summary,
                     "date": meta.get("creation_time", ""),
-                    "keywords": ", ".join(all_keywords)
+                    "keywords": ", ".join(all_keywords),
+                    "city": loc.get("city") if loc else None,
+                    "state": loc.get("state") or loc.get("state_or_region") if loc else None,
+                    "country": loc.get("country") if loc else None,
+                    "gps_latitude": loc.get("latitude") if loc else None,
+                    "gps_longitude": loc.get("longitude") if loc else None,
+                    "location_iso6709": loc.get("iso6709") if loc else None
                 }
                 try:
                     apply_metadata_tags(
@@ -1065,6 +1133,8 @@ class QueueManager:
                 "camera_make": meta.get("camera_make"),
                 "camera_model": meta.get("camera_model"),
                 "capture_fps": meta.get("capture_fps"),
+                "location": meta.get("location"),
+                "detected_location": analysis.detected_location,
                 "coherent_mode": task.coherent_mode,
                 "series_id": task.series_id,
                 "series_index": task.series_index,

@@ -140,6 +140,48 @@ def apply_exiftool_tags(
             f"-ModifyDate={tags['date']}",
         ])
 
+    # Location & GPS coordinates
+    if tags.get("city"):
+        args.extend([
+            f"-City={tags['city']}",
+            f"-XMP-photoshop:City={tags['city']}",
+            f"-XMP-iptcExt:LocationShownCity={tags['city']}"
+        ])
+    if tags.get("state"):
+        args.extend([
+            f"-State={tags['state']}",
+            f"-XMP-photoshop:State={tags['state']}",
+            f"-XMP-iptcExt:LocationShownProvinceState={tags['state']}"
+        ])
+    if tags.get("country"):
+        args.extend([
+            f"-Country={tags['country']}",
+            f"-XMP-photoshop:Country={tags['country']}",
+            f"-XMP-iptcExt:LocationShownCountryName={tags['country']}"
+        ])
+
+    gps_lat = tags.get("gps_latitude")
+    gps_lon = tags.get("gps_longitude")
+    if gps_lat is not None and gps_lon is not None:
+        try:
+            lat_f = float(gps_lat)
+            lon_f = float(gps_lon)
+            lat_ref = "N" if lat_f >= 0 else "S"
+            lon_ref = "E" if lon_f >= 0 else "W"
+            args.extend([
+                f"-GPSCoordinates={lat_f}, {lon_f}",
+                f"-Keys:GPSCoordinates={lat_f}, {lon_f}",
+                f"-UserData:GPSCoordinates={lat_f}, {lon_f}",
+                f"-GPSLatitude={abs(lat_f)}",
+                f"-GPSLatitudeRef={lat_ref}",
+                f"-GPSLongitude={abs(lon_f)}",
+                f"-GPSLongitudeRef={lon_ref}",
+                f"-XMP:GPSLatitude={lat_f}",
+                f"-XMP:GPSLongitude={lon_f}"
+            ])
+        except (ValueError, TypeError):
+            pass
+
     args.append(str(video_path))
     try:
         res = subprocess.run(args, capture_output=True, text=True, timeout=30)
@@ -237,6 +279,21 @@ def apply_metadata_tags(
             "-metadata", f"TAGS={kw}",
             "-metadata", f"genre={kw}",
             "-metadata", f"GENRE={kw}",
+        ])
+
+    loc_iso = tags.get("location_iso6709") or tags.get("location")
+    if not loc_iso and tags.get("gps_latitude") is not None and tags.get("gps_longitude") is not None:
+        try:
+            from src.media.location import format_iso6709
+            loc_iso = format_iso6709(float(tags["gps_latitude"]), float(tags["gps_longitude"]))
+        except (ValueError, TypeError):
+            pass
+    if loc_iso and isinstance(loc_iso, str) and "/" in loc_iso:
+        metadata_args.extend([
+            "-metadata", f"location={loc_iso}",
+            "-metadata", f"location-eng={loc_iso}",
+            "-metadata", f"LOCATION={loc_iso}",
+            "-metadata", f"©xyz={loc_iso}"
         ])
 
     cmd = [
@@ -426,6 +483,20 @@ def create_custom_download_video(
                 "-metadata", f"TAGS={kw}",
                 "-metadata", f"genre={kw}",
                 "-metadata", f"GENRE={kw}",
+            ])
+        loc_iso = metadata_tags.get("location_iso6709") or metadata_tags.get("location")
+        if not loc_iso and metadata_tags.get("gps_latitude") is not None and metadata_tags.get("gps_longitude") is not None:
+            try:
+                from src.media.location import format_iso6709
+                loc_iso = format_iso6709(float(metadata_tags["gps_latitude"]), float(metadata_tags["gps_longitude"]))
+            except (ValueError, TypeError):
+                pass
+        if loc_iso and isinstance(loc_iso, str) and "/" in loc_iso:
+            cmd.extend([
+                "-metadata", f"location={loc_iso}",
+                "-metadata", f"location-eng={loc_iso}",
+                "-metadata", f"LOCATION={loc_iso}",
+                "-metadata", f"©xyz={loc_iso}"
             ])
 
     is_3gp = source_video_path.suffix.lower() in (".3gp", ".3g2", ".3gpp")
