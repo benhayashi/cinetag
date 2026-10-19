@@ -34,6 +34,7 @@
   "export_srt": true,
   "export_edl": false,
   "export_fcpxml": false,
+  "treat_sony_xml_as_input_data": true,
   "rename_template": "{date}_{title}",
   "auto_rename": false,
   "enable_in_file_tagging": false,

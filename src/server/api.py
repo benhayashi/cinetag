@@ -56,6 +56,7 @@ class ScanRequest(BaseModel):
     folder_path: str
     recursive: bool = False
     hide_processed: bool = False
+    treat_sony_xml_as_input: bool = True
 
 class DroppedFileMeta(BaseModel):
     name: str
@@ -90,6 +91,7 @@ class BatchSlugGuidanceRequest(BaseModel):
 
 class CheckConflictsRequest(BaseModel):
     file_paths: List[str]
+    treat_sony_xml_as_input: Optional[bool] = None
 
 class RenamePreviewRequest(BaseModel):
     file_paths: List[str]
@@ -480,7 +482,7 @@ def set_batch_slug_guidance(req: BatchSlugGuidanceRequest):
         "slug_guidance": cfg.batch_slug_guidance
     }
 
-def find_existing_sidecars(p: Path) -> List[str]:
+def find_existing_sidecars(p: Path, include_camera_xml: bool = False) -> List[str]:
     parent = p.parent
     stem = p.stem
     name = p.name
@@ -496,24 +498,27 @@ def find_existing_sidecars(p: Path) -> List[str]:
     if any(f.exists() for f in [parent / f"{name}.edl", parent / f"{stem}.edl"]):
         found.append(".edl")
 
-    # Check for Sony XML sidecar
-    from src.media.sony_xml import find_sony_xml_sidecar
-    sony_xml = find_sony_xml_sidecar(p)
-    if sony_xml and sony_xml.exists():
-        found.append(".xml")
-    elif any(f.exists() for f in [parent / f"{stem}.xml", parent / f"{stem}.XML", parent / f"{name}.xml"]):
-        found.append(".xml")
+    # Check for Sony / camera XML sidecar only if include_camera_xml is True
+    if include_camera_xml:
+        from src.media.sony_xml import find_sony_xml_sidecar
+        sony_xml = find_sony_xml_sidecar(p)
+        if sony_xml and sony_xml.exists():
+            found.append(".xml")
+        elif any(f.exists() for f in [parent / f"{stem}.xml", parent / f"{stem}.XML", parent / f"{name}.xml"]):
+            found.append(".xml")
 
     return found
 
 @router.post("/queue/check-conflicts")
 def check_queue_conflicts(req: CheckConflictsRequest):
+    cfg = load_config()
+    treat_xml_as_input = req.treat_sony_xml_as_input if req.treat_sony_xml_as_input is not None else getattr(cfg, "treat_sony_xml_as_input_data", True)
     conflicts = []
     for fp in req.file_paths:
         p = Path(fp)
         if not p.exists():
             continue
-        sc = find_existing_sidecars(p)
+        sc = find_existing_sidecars(p, include_camera_xml=not treat_xml_as_input)
         if sc:
             conflicts.append({
                 "path": str(p.resolve()),
@@ -838,6 +843,10 @@ def scan_directory(req: ScanRequest):
             from src.media.subtitles import find_accompanying_srt
             acc_srt = find_accompanying_srt(p)
 
+            # Accompanying Sony camera XML check
+            from src.media.sony_xml import find_sony_xml_sidecar
+            acc_sony_xml = find_sony_xml_sidecar(p)
+
             if req.hide_processed and is_processed:
                 continue
 
@@ -851,7 +860,9 @@ def scan_directory(req: ScanRequest):
                     "size_formatted": format_size(stat.st_size),
                     "has_sidecar": is_processed,
                     "has_srt": acc_srt is not None,
-                    "srt_filename": acc_srt.name if acc_srt else None
+                    "srt_filename": acc_srt.name if acc_srt else None,
+                    "has_sony_xml": acc_sony_xml is not None,
+                    "sony_xml_filename": acc_sony_xml.name if acc_sony_xml else None
                 })
             except Exception:
                 pass

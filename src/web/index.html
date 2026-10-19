@@ -89,6 +89,10 @@
                   <input type="checkbox" id="scan-hide-processed">
                   <span>Hide Already Processed</span>
                 </label>
+                <label class="checkbox-label" title="Recognize Sony camera .XML companion files (e.g. C0436M01.XML) as camera source data rather than already processed output sidecars">
+                  <input type="checkbox" id="scan-treat-sony-xml" checked>
+                  <span>Sony .XML is Source Data</span>
+                </label>
               </div>
             </div>
 
@@ -1341,6 +1345,10 @@
             <label class="checkbox-label">
               <input type="checkbox" id="cfg-verify-tag-integrity" checked>
               <span>Verify stream integrity before replacing original</span>
+            </label>
+            <label class="checkbox-label" title="Recognize Sony camera .XML files (e.g. C0436M01.XML) as companion source data rather than previously processed output sidecars">
+              <input type="checkbox" id="cfg-treat-sony-xml" checked>
+              <span><b>Treat Sony Camera .XML as Source Data</b> (exempt from "already processed" conflict warnings)</span>
             </label>
           </div>
 

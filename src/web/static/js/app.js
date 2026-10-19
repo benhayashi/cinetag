@@ -1238,7 +1238,15 @@ function initScanner() {
   const folderInput = document.getElementById("scan-folder-path");
   const chkRecursive = document.getElementById("scan-recursive");
   const chkHideProcessed = document.getElementById("scan-hide-processed");
+  const chkTreatSonyXml = document.getElementById("scan-treat-sony-xml");
   const masterCheck = document.getElementById("master-select");
+
+  if (chkTreatSonyXml) {
+    chkTreatSonyXml.addEventListener("change", () => {
+      const cfgSony = document.getElementById("cfg-treat-sony-xml");
+      if (cfgSony) cfgSony.checked = chkTreatSonyXml.checked;
+    });
+  }
 
   btnScan.addEventListener("click", async () => {
     const path = folderInput.value.trim();
@@ -1257,7 +1265,8 @@ function initScanner() {
         body: JSON.stringify({
           folder_path: path,
           recursive: chkRecursive.checked,
-          hide_processed: chkHideProcessed.checked
+          hide_processed: chkHideProcessed.checked,
+          treat_sony_xml_as_input: chkTreatSonyXml ? chkTreatSonyXml.checked : true
         })
       });
 
@@ -1353,10 +1362,14 @@ function renderScannedTable() {
       ? `<span class="badge-tag" style="background:#1e3a5f; color:#93c5fd; font-size:0.7rem; margin-left:6px;" title="Accompanying subtitle: ${escapeHtml(v.srt_filename || '')}">💬 .SRT paired</span>`
       : '';
 
+    const sonyBadge = v.has_sony_xml
+      ? `<span class="badge-tag" style="background:rgba(147, 51, 234, 0.2); border:1px solid rgba(168, 85, 247, 0.4); color:#c084fc; font-size:0.7rem; margin-left:6px;" title="Accompanying Sony camera metadata: ${escapeHtml(v.sony_xml_filename || '')}">📷 Sony .XML</span>`
+      : '';
+
     return `
       <tr>
         <td><input type="checkbox" class="file-select-chk" data-path="${escapeHtml(v.path)}" ${v.has_sidecar ? "" : "checked"}></td>
-        <td><b>${escapeHtml(v.filename)}</b>${srtBadge}</td>
+        <td><b>${escapeHtml(v.filename)}</b>${srtBadge}${sonyBadge}</td>
         <td class="text-muted"><small>${escapeHtml(v.parent_dir)}</small></td>
         <td>${v.size_formatted}</td>
         <td>${statusBadge}</td>
@@ -1491,10 +1504,15 @@ async function requestEnqueueWithConflictCheck(filePaths, autoStart = false) {
   if (!filePaths || filePaths.length === 0) return;
 
   try {
+    const chkTreatSonyXml = document.getElementById("scan-treat-sony-xml");
+    const treatSonyXml = chkTreatSonyXml ? chkTreatSonyXml.checked : true;
     const res = await fetch("/api/queue/check-conflicts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file_paths: filePaths })
+      body: JSON.stringify({
+        file_paths: filePaths,
+        treat_sony_xml_as_input: treatSonyXml
+      })
     });
 
     if (res.ok) {
@@ -2238,6 +2256,10 @@ async function loadConfig() {
     if (flushBackupQuickEl) flushBackupQuickEl.checked = cfg.flush_backup_on_success !== false;
     const verifyTagEl = document.getElementById("cfg-verify-tag-integrity");
     if (verifyTagEl) verifyTagEl.checked = cfg.verify_integrity !== false;
+    const treatSonyXmlEl = document.getElementById("cfg-treat-sony-xml");
+    if (treatSonyXmlEl) treatSonyXmlEl.checked = cfg.treat_sony_xml_as_input_data !== false;
+    const scanTreatSonyXmlEl = document.getElementById("scan-treat-sony-xml");
+    if (scanTreatSonyXmlEl) scanTreatSonyXmlEl.checked = cfg.treat_sony_xml_as_input_data !== false;
     const schemeEl = document.getElementById("cfg-rename-scheme");
     if (schemeEl) schemeEl.value = cfg.rename_scheme || "compact_zulu_title";
     const templateEl = document.getElementById("cfg-rename-template");
@@ -2511,6 +2533,14 @@ function initSettings() {
   const incNamesEl = document.getElementById("cfg-include-names");
   if (incNamesEl) incNamesEl.addEventListener("change", updateRenameSchemePreview);
 
+  const cfgSony = document.getElementById("cfg-treat-sony-xml");
+  if (cfgSony) {
+    cfgSony.addEventListener("change", () => {
+      const scanSony = document.getElementById("scan-treat-sony-xml");
+      if (scanSony) scanSony.checked = cfgSony.checked;
+    });
+  }
+
   // Verify custom paths button
   const btnVerify = document.getElementById("btn-verify-ffmpeg-paths");
   if (btnVerify) {
@@ -2733,6 +2763,7 @@ function initSettings() {
       backup_before_tagging: document.getElementById("cfg-backup-before-tagging")?.checked ?? true,
       flush_backup_on_success: (document.getElementById("cfg-flush-backup-on-success")?.checked ?? document.getElementById("cfg-flush-backup-quick")?.checked ?? true),
       verify_integrity: document.getElementById("cfg-verify-tag-integrity")?.checked ?? true,
+      treat_sony_xml_as_input_data: document.getElementById("cfg-treat-sony-xml")?.checked ?? true,
       auto_rename: document.getElementById("cfg-auto-rename")?.checked || false,
       rename_scheme: document.getElementById("cfg-rename-scheme")?.value || "date_title",
       rename_template: document.getElementById("cfg-rename-template")?.value.trim() || "{date}_{title}",

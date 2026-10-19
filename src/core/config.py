@@ -100,6 +100,7 @@ class AppConfig(BaseModel):
     export_edl: bool = False
     export_fcpxml: bool = False
     export_srt: bool = Field(default=True, description="Auto-export full dialogue subtitle (.srt) sidecar if not already available")
+    treat_sony_xml_as_input_data: bool = Field(default=True, description="Treat Sony camera .XML companion files (e.g. C0436M01.XML) as companion source data rather than already processed output sidecars, preventing false conflict warnings")
 
     # Safe Renaming & Organization
     rename_template: str = "{date_compact}_{time_zulu}_{title}"

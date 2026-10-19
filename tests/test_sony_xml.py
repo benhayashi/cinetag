@@ -208,9 +208,9 @@ def test_api_results_with_sony_xml(tmp_path):
     xml = tmp_path / "C0001M01.XML"
     xml.write_text(SAMPLE_SONY_XML, encoding="utf-8")
 
-    # Test find_existing_sidecars
-    existing = find_existing_sidecars(video)
-    assert ".xml" in existing
+    # Test find_existing_sidecars with and without include_camera_xml
+    assert ".xml" in find_existing_sidecars(video, include_camera_xml=True)
+    assert ".xml" not in find_existing_sidecars(video, include_camera_xml=False)
 
     # Test /api/results endpoint
     client = TestClient(app)
@@ -223,3 +223,62 @@ def test_api_results_with_sony_xml(tmp_path):
     assert data["sidecars"]["xml"]["exists"] is True
     assert "C0001M01.XML" in data["sidecars"]["xml"]["filename"]
     assert "/api/download?file_path=" in data["sidecars"]["xml"]["url"]
+
+
+def test_check_queue_conflicts_with_sony_xml(tmp_path):
+    video = tmp_path / "C0436.MP4"
+    video.write_bytes(b"dummy video data")
+    xml = tmp_path / "C0436M01.XML"
+    xml.write_text(SAMPLE_SONY_XML, encoding="utf-8")
+
+    client = TestClient(app)
+
+    # Default (treat_sony_xml_as_input=True): no conflict
+    res_default = client.post("/api/queue/check-conflicts", json={
+        "file_paths": [str(video.resolve())]
+    })
+    assert res_default.status_code == 200
+    assert res_default.json()["has_conflicts"] is False
+
+    # Explicit treat_sony_xml_as_input=True: no conflict
+    res_true = client.post("/api/queue/check-conflicts", json={
+        "file_paths": [str(video.resolve())],
+        "treat_sony_xml_as_input": True
+    })
+    assert res_true.status_code == 200
+    assert res_true.json()["has_conflicts"] is False
+
+    # When treat_sony_xml_as_input=False: reports conflict because .xml is treated as output sidecar
+    res_false = client.post("/api/queue/check-conflicts", json={
+        "file_paths": [str(video.resolve())],
+        "treat_sony_xml_as_input": False
+    })
+    assert res_false.status_code == 200
+    data_false = res_false.json()
+    assert data_false["has_conflicts"] is True
+    assert ".xml" in data_false["conflicts"][0]["sidecars"]
+
+
+def test_scan_directory_with_sony_xml(tmp_path):
+    video = tmp_path / "C0436.MP4"
+    video.write_bytes(b"dummy video data")
+    xml = tmp_path / "C0436M01.XML"
+    xml.write_text(SAMPLE_SONY_XML, encoding="utf-8")
+
+    client = TestClient(app)
+    res = client.post("/api/scan", json={
+        "folder_path": str(tmp_path),
+        "recursive": False,
+        "hide_processed": False,
+        "treat_sony_xml_as_input": True
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total_found"] == 1
+    file_info = data["files"][0]
+    assert file_info["filename"] == "C0436.MP4"
+    assert file_info["has_sony_xml"] is True
+    assert file_info["sony_xml_filename"] == "C0436M01.XML"
+    # Unanalyzed video should not be marked as processed
+    assert file_info["has_sidecar"] is False
+
