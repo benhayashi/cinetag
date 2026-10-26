@@ -667,8 +667,8 @@ function renderQueueTable(tasks, currentTask) {
     } else if (t.status === "completed") {
       actionsHtml = `
         <div style="display:flex; gap:4px; align-items:center; justify-content:flex-end;">
-          <button class="btn btn-sm btn-secondary" onclick="openResultsModalByTaskId('${t.id}')" title="Review & Edit Analysis Metadata">📝 Review</button>
           <button class="btn btn-sm btn-secondary" onclick="openRenameModalByTaskId('${t.id}')" title="Rename video and all support files">✏️ Rename</button>
+          <button class="btn btn-sm btn-secondary" onclick="openResultsModalByTaskId('${t.id}')" title="Review & Edit Analysis Metadata">📝 Review</button>
           <button class="btn btn-sm btn-danger-outline" onclick="removeQueueItem('${t.id}')" title="Remove from queue list" style="padding:2px 6px;">✕</button>
         </div>
       `;
